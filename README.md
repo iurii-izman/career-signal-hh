@@ -48,7 +48,9 @@ source .venv/bin/activate
 Настройки `.env`:
 
 ```dotenv
-HH_USER_AGENT=CareerSignalHH/0.1 (+https://github.com/iurii-izman/career-signal-hh)
+HH_AUTH_MODE=application_token
+HH_APP_ACCESS_TOKEN=
+HH_USER_AGENT=IuriiVacancyMarketAnalytics/0.1 (your_email@example.com)
 DB_PATH=data/vacancies.sqlite
 REQUEST_DELAY_MIN=0.3
 REQUEST_DELAY_MAX=0.7
@@ -59,6 +61,15 @@ REQUEST_DELAY_MAX=0.7
 `bad_user_agent/blacklisted`. При такой ошибке приложение завершает поиск после
 первого запроса. Дополнительных runtime-зависимостей сверх заданных нет.
 `pytest` включён в `requirements.txt` для простого локального MVP.
+
+Режимы авторизации:
+
+- `none` — не отправлять заголовок `Authorization`;
+- `application_token` — отправлять `Bearer` token из `HH_APP_ACCESS_TOKEN`;
+- `user_oauth` — зарезервирован на будущее и пока не реализован.
+
+При `application_token` с пустым `HH_APP_ACCESS_TOKEN` приложение не падает
+при импорте, но API-команды завершаются понятной конфигурационной ошибкой.
 
 ## Запуск
 
@@ -81,6 +92,7 @@ python -m src.main search
 python -m src.main top
 python -m src.main stats
 python -m src.main export
+python -m src.main auth-check
 ```
 
 Экспорт можно фильтровать:
@@ -156,3 +168,41 @@ python -m src.main search --dry-run --profile ai_automation --max-pages 1
 client, `client_id`/`client_secret`, безопасное token storage и явные команды
 для разрешённых OAuth-операций. Авторизованный клиент не должен подменять
 текущий `HHClient`: это позволит не ломать публичный поиск и экспорт.
+
+## Работа после одобрения заявки HH API
+
+1. Откройте `https://dev.hh.ru/admin`.
+2. Откройте приложение **Iurii Vacancy Market Analytics / CareerSignal HH**.
+3. Сгенерируйте или посмотрите application access token.
+4. Создайте `.env` из `.env.example`, если файл ещё не создан:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+5. Заполните параметры:
+
+   ```dotenv
+   HH_AUTH_MODE=application_token
+   HH_APP_ACCESS_TOKEN=ваш_токен
+   ```
+
+6. Проверьте доступ:
+
+   ```powershell
+   python -m src.main auth-check
+   ```
+
+   Команда показывает режим, наличие токена и User-Agent, затем проверяет
+   `GET /me` и `GET /vacancies?text=python&per_page=1`. Сам токен не выводится.
+
+7. Запустите рабочий цикл:
+
+   ```powershell
+   python -m src.main search
+   python -m src.main top
+   python -m src.main export
+   ```
+
+Не коммитьте `.env` и не вставляйте токен в README, issues, commits или
+скриншоты. Если токен случайно попал в GitHub, перевыпустите его в кабинете HH.

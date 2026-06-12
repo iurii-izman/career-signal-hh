@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any
 
@@ -10,7 +11,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 class HHAPIError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body: Any = None,
+        path: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+        self.path = path
 
 
 class HHConfigurationError(HHAPIError):
@@ -24,14 +36,65 @@ class HHAuthorizationRequired(HHAPIError):
 class HHClient:
     base_url = "https://api.hh.ru"
 
-    def __init__(self, user_agent: str, timeout: int = 20) -> None:
+    def __init__(
+        self,
+        user_agent: str | None = None,
+        timeout: int = 20,
+        auth_mode: str | None = None,
+        app_access_token: str | None = None,
+    ) -> None:
         self.timeout = timeout
+        self.auth_mode = (auth_mode or os.getenv("HH_AUTH_MODE", "none")).strip().lower()
+        self.app_access_token = (
+            app_access_token
+            if app_access_token is not None
+            else os.getenv("HH_APP_ACCESS_TOKEN", "")
+        ).strip()
+        self.user_agent = user_agent or os.getenv(
+            "HH_USER_AGENT", "CareerSignalHH/0.1"
+        )
         self.session = requests.Session()
         self.session.headers.update(
-            {"User-Agent": user_agent, "Accept": "application/json"}
+            {"User-Agent": self.user_agent, "Accept": "application/json"}
         )
+        if self.auth_mode == "application_token" and self.app_access_token:
+            self.session.headers["Authorization"] = (
+                f"Bearer {self.app_access_token}"
+            )
+
+    def _validate_auth(self) -> None:
+        if self.auth_mode == "application_token" and not self.app_access_token:
+            raise HHConfigurationError(
+                "HH_AUTH_MODE=application_token, но HH_APP_ACCESS_TOKEN пуст. "
+                "Добавьте токен приложения в .env."
+            )
+        if self.auth_mode == "user_oauth":
+            raise NotImplementedError(
+                "HH_AUTH_MODE=user_oauth зарезервирован на будущее и пока не реализован."
+            )
+        if self.auth_mode not in {"none", "application_token"}:
+            raise HHConfigurationError(
+                f"Неизвестный HH_AUTH_MODE={self.auth_mode!r}. "
+                "Допустимы none, application_token и user_oauth."
+            )
+
+    @staticmethod
+    def _response_body(response: requests.Response) -> Any:
+        try:
+            return response.json()
+        except ValueError:
+            return response.text[:1000]
+
+    @staticmethod
+    def _body_text(body: Any) -> str:
+        if isinstance(body, str):
+            return body
+        import json
+
+        return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
 
     def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        self._validate_auth()
         url = f"{self.base_url}{path}"
         for attempt in range(3):
             try:
@@ -46,36 +109,46 @@ class HHClient:
                 LOGGER.warning("HH API rate limit, повтор через %.1f сек.", delay)
                 time.sleep(delay)
                 continue
-            if response.status_code in {400, 403, 404, 429} or response.status_code >= 500:
-                detail = response.text[:300]
+            if response.status_code >= 400:
+                body = self._response_body(response)
+                detail = self._body_text(body)
                 if (
                     response.status_code == 400
-                    and '"type":"bad_user_agent"' in response.text.replace(" ", "")
+                    and '"type":"bad_user_agent"' in detail.replace(" ", "")
                 ):
                     raise HHConfigurationError(
                         "HH отклонил HH_USER_AGENT. Укажите уникальное название "
                         "приложения и реальный контакт или URL проекта в .env. "
-                        f"Ответ API: {detail}"
+                        f"Ответ API: {detail}",
+                        status_code=400,
+                        body=body,
+                        path=path,
                     )
-                if (
-                    response.status_code == 403
-                    and path.startswith("/vacancies")
-                    and '"type":"forbidden"' in response.text.replace(" ", "")
-                ):
+                if response.status_code == 401:
                     raise HHAuthorizationRequired(
-                        "HH принял User-Agent, но запретил доступ к вакансиям "
-                        "без авторизации приложения (HTTP 403 forbidden)."
+                        "HH API вернул 401. Токен отсутствует, истёк, отозван "
+                        "или неверно передан.",
+                        status_code=401,
+                        body=body,
+                        path=path,
                     )
-                hint = ""
-                if response.status_code == 403 and path.startswith("/vacancies"):
-                    hint = (
-                        " Поиск/получение вакансий может требовать авторизацию "
-                        "приложения согласно текущей политике HH API."
+                if response.status_code == 403:
+                    raise HHAuthorizationRequired(
+                        "HH API вернул 403. Для доступа к этому методу может "
+                        "требоваться токен приложения. Проверьте, что заявка "
+                        "одобрена, HH_APP_ACCESS_TOKEN указан в .env, а "
+                        "HH_AUTH_MODE=application_token. "
+                        f"Ответ API: {detail}",
+                        status_code=403,
+                        body=body,
+                        path=path,
                     )
                 raise HHAPIError(
-                    f"HH API вернул {response.status_code} для {path}: {detail}{hint}"
+                    f"HH API вернул {response.status_code} для {path}: {detail}",
+                    status_code=response.status_code,
+                    body=body,
+                    path=path,
                 )
-            response.raise_for_status()
             return response.json()
         raise HHAPIError(f"HH API не ответил после повторов: {path}")
 
@@ -103,6 +176,9 @@ class HHClient:
 
     def get_vacancy(self, vacancy_id: str) -> dict[str, Any]:
         return self._request(f"/vacancies/{vacancy_id}")
+
+    def get_me(self) -> dict[str, Any]:
+        return self._request("/me")
 
     def get_areas(self) -> list[dict[str, Any]]:
         return self._request("/areas")

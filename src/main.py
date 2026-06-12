@@ -34,8 +34,66 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 def _services() -> tuple[Storage, HHClient, dict[str, Any]]:
     load_dotenv()
     storage = Storage(os.getenv("DB_PATH", "data/vacancies.sqlite"))
-    client = HHClient(os.getenv("HH_USER_AGENT", "CareerSignalHH/0.1"))
+    client = HHClient()
     return storage, client, load_scoring_rules()
+
+
+def _short_body(value: Any) -> str:
+    if value is None:
+        return ""
+    import json
+
+    if isinstance(value, str):
+        text = value
+    else:
+        text = json.dumps(value, ensure_ascii=False)
+    return text if len(text) <= 240 else text[:237] + "..."
+
+
+def command_auth_check(_: argparse.Namespace) -> int:
+    load_dotenv()
+    client = HHClient()
+    token_present = bool(client.app_access_token)
+    console.print(f"HH_AUTH_MODE: [bold]{client.auth_mode}[/bold]")
+    console.print(
+        "HH_APP_ACCESS_TOKEN: "
+        + ("[green]указан[/green]" if token_present else "[yellow]не указан[/yellow]")
+    )
+    console.print(f"HH_USER_AGENT: {client.user_agent}")
+
+    table = Table(title="Проверка доступа HH API")
+    table.add_column("Проверка")
+    table.add_column("Результат")
+    table.add_column("Status")
+    table.add_column("Объяснение")
+    checks = [
+        ("GET /me", client.get_me),
+        (
+            "GET /vacancies",
+            lambda: client.search_vacancies("python", per_page=1),
+        ),
+    ]
+    failed = False
+    for label, operation in checks:
+        try:
+            operation()
+            table.add_row(label, "[green]OK[/green]", "200", "Доступ разрешён")
+        except NotImplementedError as exc:
+            failed = True
+            table.add_row(label, "[red]FAIL[/red]", "-", str(exc))
+        except HHAPIError as exc:
+            failed = True
+            status = str(exc.status_code) if exc.status_code is not None else "-"
+            explanation = str(exc)
+            body = _short_body(exc.body)
+            if body and body not in explanation:
+                explanation = f"{explanation}\nBody: {body}"
+            table.add_row(label, "[red]FAIL[/red]", status, explanation)
+        except Exception as exc:
+            failed = True
+            table.add_row(label, "[red]FAIL[/red]", "-", f"Ошибка соединения: {exc}")
+    console.print(table)
+    return 1 if failed else 0
 
 
 def command_search(args: argparse.Namespace) -> int:
@@ -115,6 +173,10 @@ def command_search(args: argparse.Namespace) -> int:
                         "авторизацию приложения для доступа к вакансиям.[/yellow]"
                     )
                     return 3
+                except NotImplementedError as exc:
+                    logging.error("%s", exc)
+                    console.print(f"[red]Поиск остановлен: {exc}[/red]")
+                    return 4
                 except HHAPIError as exc:
                     error = str(exc)
                     logging.error("%s / %s / %s: %s", profile_name, query, area, exc)
@@ -184,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     export.set_defaults(func=command_export)
     sub.add_parser("top").set_defaults(func=command_top)
     sub.add_parser("stats").set_defaults(func=command_stats)
+    sub.add_parser("auth-check").set_defaults(func=command_auth_check)
     return parser
 
 
