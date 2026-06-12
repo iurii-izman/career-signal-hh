@@ -1,0 +1,36 @@
+profiles:
+  ai_automation:
+    enabled: true
+    queries:
+      - "AI Automation Engineer"
+      - "LLM Engineer"
+      - "RAG Engineer"
+      - "AI Engineer"
+      - "Python Automation"
+      - "Systems Integration Engineer"
+      - "Integration Engineer API"
+      - "n8n automation"
+      - "Data Engineer AI"
+      - "Technical Project Manager AI"
+    areas: [1001, 28, 2, 1]
+    params:
+      schedule: [remote]
+      experience: [between3And6, moreThan6]
+
+  bitrix_1c:
+    enabled: true
+    queries:
+      - "Битрикс24"
+      - "Bitrix24"
+      - "Аналитик Битрикс24"
+      - "Интегратор Битрикс24"
+      - "CRM аналитик"
+      - "1C Битрикс"
+      - "1С аналитик"
+      - "Бизнес аналитик CRM"
+      - "Архитектор CRM"
+      - "Автоматизация бизнес-процессов"
+    areas: [1001, 28, 2, 1]
+    params:
+      schedule: [remote]
+      experience: [between3And6, moreThan6]

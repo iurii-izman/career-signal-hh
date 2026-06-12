@@ -1,0 +1,87 @@
+profiles:
+  ai_automation:
+    keywords:
+      "llm": 12
+      "rag": 12
+      "genai": 10
+      "artificial intelligence": 8
+      "искусственный интеллект": 8
+      "ai": 6
+      "python": 8
+      "fastapi": 7
+      "api": 5
+      "webhook": 6
+      "automation": 7
+      "автоматизация": 7
+      "n8n": 10
+      "langchain": 9
+      "langgraph": 9
+      "pydantic ai": 9
+      "llamaindex": 9
+      "postgresql": 4
+      "docker": 3
+      "integration": 6
+      "интеграц": 6
+      "systems integration": 9
+      "technical specification": 5
+      "техническое задание": 5
+      "business process automation": 8
+      "typescript": 3
+      "javascript": 3
+      "rust": 3
+      "tauri": 4
+      "crm": 4
+      "erp": 4
+  bitrix_1c:
+    keywords:
+      "битрикс24": 14
+      "bitrix24": 14
+      "crm": 8
+      "смарт-процесс": 9
+      "робот": 5
+      "триггер": 5
+      "бизнес-процесс": 8
+      "права доступа": 5
+      "пользовательские поля": 5
+      "задачи и проекты": 5
+      "коробочная версия": 7
+      "1с": 10
+      "1c": 10
+      "бизнес-аналитик": 8
+      "системный аналитик": 8
+      "архитектор crm": 10
+      "автоматизация продаж": 7
+      "автоматизация бизнес-процессов": 10
+      "bpmn": 7
+      "as-is": 6
+      "to-be": 6
+      "техническое задание": 6
+
+risks:
+  sales_only:
+    keywords: ["менеджер по продажам", "sales manager", "холодные звонки", "account executive"]
+    penalty: 35
+  recruiter_only:
+    keywords: ["рекрутер", "recruiter", "talent acquisition"]
+    penalty: 35
+  grey_niche:
+    keywords: ["gambling", "казино", "adult", "crypto casino"]
+    penalty: 30
+  frontend_only:
+    keywords: ["frontend only", "только frontend", "верстальщик"]
+    penalty: 18
+  heavy_science:
+    keywords: ["phd required", "кандидат наук", "математическое моделирование"]
+    penalty: 15
+  hardware_only:
+    keywords: ["embedded only", "микроконтроллеры", "схемотехника"]
+    penalty: 20
+  junior_support:
+    keywords: ["первая линия поддержки", "junior support", "оператор поддержки"]
+    penalty: 20
+  telephony_only:
+    keywords: ["только телефония", "оператор call-центра", "оператор колл-центра"]
+    penalty: 20
+  principal_10_years:
+    keywords: ["principal", "staff engineer", "10+ years", "10 лет опыта"]
+    penalty: 12
