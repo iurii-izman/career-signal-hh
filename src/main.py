@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import os
 import random
+import sqlite3
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
@@ -96,6 +100,186 @@ def command_auth_check(_: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def command_doctor(_: argparse.Namespace) -> int:
+    load_dotenv()
+    rows: list[tuple[str, str, str]] = []
+
+    def add(check: str, status: str, details: str) -> None:
+        colors = {"OK": "green", "WARN": "yellow", "FAIL": "red"}
+        rows.append((check, f"[{colors[status]}]{status}[/{colors[status]}]", details))
+
+    version = sys.version_info
+    version_text = f"{version.major}.{version.minor}.{version.micro}"
+    add(
+        "Python version",
+        "OK" if version >= (3, 11) else "FAIL",
+        f"{version_text} (требуется 3.11+)",
+    )
+    add("Working directory", "OK", str(Path.cwd()))
+
+    for filename, required in [
+        (".env", False),
+        (".env.example", True),
+        ("config/search_profiles.yaml", True),
+        ("config/scoring_rules.yaml", True),
+    ]:
+        path = Path(filename)
+        status = "OK" if path.is_file() else ("FAIL" if required else "WARN")
+        details = str(path.resolve()) if path.exists() else "Файл не найден"
+        add(filename, status, details)
+
+    for filename in ["config/search_profiles.yaml", "config/scoring_rules.yaml"]:
+        try:
+            content = load_search_profiles(filename) if "search_profiles" in filename else load_scoring_rules(filename)
+            if not isinstance(content, dict):
+                raise ValueError("корневое значение должно быть mapping")
+            add(f"YAML: {filename}", "OK", "Конфигурация валидна")
+        except (AttributeError, OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+            add(f"YAML: {filename}", "FAIL", str(exc))
+
+    for dirname in ["data", "exports"]:
+        path = Path(dirname)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            add(f"Directory: {dirname}", "OK", str(path.resolve()))
+        except OSError as exc:
+            add(f"Directory: {dirname}", "FAIL", str(exc))
+
+    auth_mode = os.getenv("HH_AUTH_MODE", "none").strip().lower()
+    valid_modes = {"none", "application_token", "user_oauth"}
+    add(
+        "HH_AUTH_MODE",
+        "OK" if auth_mode in valid_modes else "FAIL",
+        auth_mode,
+    )
+    token_present = bool(os.getenv("HH_APP_ACCESS_TOKEN", "").strip())
+    if auth_mode == "application_token":
+        add(
+            "HH_APP_ACCESS_TOKEN",
+            "OK" if token_present else "WARN",
+            "Указан" if token_present else "Не указан",
+        )
+    else:
+        add("HH_APP_ACCESS_TOKEN", "OK", "Не требуется для текущего режима")
+
+    db_path = os.getenv("DB_PATH", "data/vacancies.sqlite")
+    add("DB_PATH", "OK", db_path)
+    try:
+        storage = Storage(db_path)
+        with storage.connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+        add("SQLite", "OK", f"База доступна: {Path(db_path).resolve()}")
+    except (OSError, sqlite3.Error) as exc:
+        add("SQLite", "FAIL", str(exc))
+
+    modules = [
+        "requests",
+        "dotenv",
+        "pydantic",
+        "yaml",
+        "rich",
+        "bs4",
+        "dateutil",
+        "src.hh_client",
+        "src.storage",
+        "src.scoring",
+    ]
+    try:
+        for module_name in modules:
+            importlib.import_module(module_name)
+        add("Core imports", "OK", f"{len(modules)} модулей импортированы")
+    except ImportError as exc:
+        add("Core imports", "FAIL", str(exc))
+
+    table = Table(title="CareerSignal HH Doctor")
+    table.add_column("CHECK")
+    table.add_column("STATUS")
+    table.add_column("DETAILS")
+    for row in rows:
+        table.add_row(*row)
+    console.print(table)
+    return 1 if any("[red]FAIL" in status for _, status, _ in rows) else 0
+
+
+def command_profiles(_: argparse.Namespace) -> int:
+    try:
+        profiles = load_search_profiles()
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        console.print(f"[red]Не удалось прочитать профили: {exc}[/red]")
+        return 1
+    table = Table(title="Поисковые профили")
+    for column in [
+        "Profile", "Enabled", "Queries", "Areas", "Schedules", "Experience", "Preview",
+    ]:
+        table.add_column(column)
+    for name, config in profiles.items():
+        params = config.get("params") or {}
+        queries = config.get("queries") or []
+        table.add_row(
+            name,
+            "yes" if config.get("enabled", True) else "no",
+            str(len(queries)),
+            str(len(config.get("areas") or [])),
+            ", ".join(params.get("schedule") or []) or "-",
+            ", ".join(params.get("experience") or []) or "-",
+            " | ".join(str(query) for query in queries[:3]) or "-",
+        )
+    console.print(table)
+    return 0
+
+
+def _sample_vacancies() -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc).isoformat()
+    samples = [
+        ("sample-ai-llm", "LLM / RAG Automation Engineer", "Signal AI", "Python, FastAPI, LangChain, RAG, API integrations and n8n automation.", ["Python", "RAG", "LangChain"], "Удаленная работа", 2500, 4000, "USD", "ai_automation"),
+        ("sample-ai-integration", "Systems Integration Engineer", "Flow Systems", "Webhooks, PostgreSQL, Docker and CRM/ERP integrations.", ["API", "PostgreSQL", "Docker"], "Удаленная работа", 180000, 260000, "RUR", "ai_automation"),
+        ("sample-ai-pm", "Technical Project Manager AI", "Automation Lab", "Technical specifications and business process automation for GenAI products.", ["GenAI", "Automation"], "Гибрид", None, None, None, "ai_automation"),
+        ("sample-bitrix", "Архитектор CRM Битрикс24", "CRM Practice", "Битрикс24, смарт-процессы, роботы, триггеры и права доступа.", ["Битрикс24", "CRM"], "Удаленная работа", 150000, 220000, "RUR", "bitrix_1c"),
+        ("sample-1c", "Системный аналитик 1С / CRM", "Business Stack", "Интеграции с 1С, BPMN, AS-IS, TO-BE и техническое задание.", ["1С", "BPMN"], "Гибрид", 2000, 3000, "USD", "bitrix_1c"),
+        ("sample-low", "Менеджер по продажам", "Sales Only", "Холодные звонки и выполнение плана продаж.", [], "Полный день", None, None, None, "bitrix_1c"),
+    ]
+    result: list[dict[str, Any]] = []
+    for vacancy_id, name, employer, description, skills, schedule, salary_from, salary_to, currency, profile in samples:
+        result.append({
+            "id": vacancy_id,
+            "name": name,
+            "employer": {"id": f"employer-{vacancy_id}", "name": employer},
+            "area": {"name": "Demo region"},
+            "alternate_url": f"https://hh.ru/vacancy/{vacancy_id}",
+            "published_at": now,
+            "created_at": now,
+            "archived": False,
+            "salary": {"from": salary_from, "to": salary_to, "currency": currency} if salary_from is not None or salary_to is not None else None,
+            "schedule": {"name": schedule},
+            "employment": {"name": "Полная занятость"},
+            "experience": {"name": "От 3 до 6 лет"},
+            "description": f"<p>{description}</p>",
+            "key_skills": [{"name": skill} for skill in skills],
+            "_source_profile": profile,
+        })
+    return result
+
+
+def command_sample_export(_: argparse.Namespace) -> int:
+    load_dotenv()
+    storage = Storage(os.getenv("DB_PATH", "data/vacancies.sqlite"))
+    rules = load_scoring_rules()
+    for item in _sample_vacancies():
+        source_profile = item.pop("_source_profile")
+        vacancy = Vacancy.from_hh(item, source_profile)
+        storage.upsert_vacancy(vacancy)
+        storage.upsert_score(score_vacancy(vacancy, rules))
+    rows = storage.list_vacancies()
+    export_html(rows, "exports/vacancies_report.html")
+    export_csv(rows, "exports/vacancies.csv")
+    export_jsonl(rows, "exports/vacancies.jsonl")
+    console.print(
+        f"[green]Добавлено mock-вакансий: 6. Экспортировано записей: {len(rows)}.[/green]"
+    )
+    console.print("HTML: exports/vacancies_report.html")
+    return 0
+
+
 def command_search(args: argparse.Namespace) -> int:
     profiles = load_search_profiles()
     selected = {args.profile: profiles.get(args.profile)} if args.profile else profiles
@@ -154,9 +338,7 @@ def command_search(args: argparse.Namespace) -> int:
                         "area_id": str(area) if area is not None else None,
                         **counters, "error": error,
                     })
-                    console.print(
-                        "[red]Поиск остановлен: исправьте HH_USER_AGENT в .env.[/red]"
-                    )
+                    console.print(f"[red]Поиск остановлен: {exc}[/red]")
                     return 2
                 except HHAuthorizationRequired as exc:
                     error = str(exc)
@@ -247,6 +429,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("top").set_defaults(func=command_top)
     sub.add_parser("stats").set_defaults(func=command_stats)
     sub.add_parser("auth-check").set_defaults(func=command_auth_check)
+    sub.add_parser("doctor").set_defaults(func=command_doctor)
+    sub.add_parser("profiles").set_defaults(func=command_profiles)
+    sub.add_parser("sample-export").set_defaults(func=command_sample_export)
     return parser
 
 

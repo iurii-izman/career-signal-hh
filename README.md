@@ -73,6 +73,25 @@ REQUEST_DELAY_MAX=0.7
 
 ## Запуск
 
+Рекомендуемый первый запуск без доступа к HH API:
+
+```powershell
+python -m src.main doctor
+python -m src.main profiles
+python -m src.main sample-export
+python -m src.main export
+```
+
+`doctor` локально проверяет Python, файлы конфигурации, YAML, каталоги,
+настройки авторизации, SQLite и основные импорты. Сетевых запросов он не делает.
+
+`profiles` показывает включённые поисковые профили, число запросов и регионов,
+параметры schedule/experience и preview первых трёх запросов.
+
+`sample-export` идемпотентно добавляет шесть демонстрационных вакансий в
+настроенную SQLite-базу, рассчитывает scoring и создаёт HTML/CSV/JSONL. Это
+позволяет проверить отчёт до одобрения доступа к HH API.
+
 Показать запросы без обращения к API:
 
 ```powershell
@@ -93,6 +112,9 @@ python -m src.main top
 python -m src.main stats
 python -m src.main export
 python -m src.main auth-check
+python -m src.main doctor
+python -m src.main profiles
+python -m src.main sample-export
 ```
 
 Экспорт можно фильтровать:
