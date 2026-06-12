@@ -15,7 +15,12 @@ from rich.table import Table
 
 from .exporter_csv import export_csv, export_jsonl
 from .exporter_html import export_html
-from .hh_client import HHAPIError, HHClient
+from .hh_client import (
+    HHAPIError,
+    HHAuthorizationRequired,
+    HHClient,
+    HHConfigurationError,
+)
 from .models import Vacancy
 from .scoring import score_vacancy
 from .search_profiles import load_scoring_rules, load_search_profiles
@@ -81,6 +86,35 @@ def command_search(args: argparse.Namespace) -> int:
                         if page + 1 >= int(result.get("pages", 0)) or not items:
                             break
                         time.sleep(random.uniform(delay_min, delay_max))
+                except HHConfigurationError as exc:
+                    error = str(exc)
+                    logging.error("%s", exc)
+                    storage.add_search_run({
+                        "started_at": started,
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                        "profile_name": profile_name, "query": query,
+                        "area_id": str(area) if area is not None else None,
+                        **counters, "error": error,
+                    })
+                    console.print(
+                        "[red]Поиск остановлен: исправьте HH_USER_AGENT в .env.[/red]"
+                    )
+                    return 2
+                except HHAuthorizationRequired as exc:
+                    error = str(exc)
+                    logging.error("%s", exc)
+                    storage.add_search_run({
+                        "started_at": started,
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                        "profile_name": profile_name, "query": query,
+                        "area_id": str(area) if area is not None else None,
+                        **counters, "error": error,
+                    })
+                    console.print(
+                        "[yellow]Поиск остановлен: HH API сейчас требует "
+                        "авторизацию приложения для доступа к вакансиям.[/yellow]"
+                    )
+                    return 3
                 except HHAPIError as exc:
                     error = str(exc)
                     logging.error("%s / %s / %s: %s", profile_name, query, area, exc)

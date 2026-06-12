@@ -13,6 +13,14 @@ class HHAPIError(RuntimeError):
     pass
 
 
+class HHConfigurationError(HHAPIError):
+    pass
+
+
+class HHAuthorizationRequired(HHAPIError):
+    pass
+
+
 class HHClient:
     base_url = "https://api.hh.ru"
 
@@ -40,6 +48,24 @@ class HHClient:
                 continue
             if response.status_code in {400, 403, 404, 429} or response.status_code >= 500:
                 detail = response.text[:300]
+                if (
+                    response.status_code == 400
+                    and '"type":"bad_user_agent"' in response.text.replace(" ", "")
+                ):
+                    raise HHConfigurationError(
+                        "HH отклонил HH_USER_AGENT. Укажите уникальное название "
+                        "приложения и реальный контакт или URL проекта в .env. "
+                        f"Ответ API: {detail}"
+                    )
+                if (
+                    response.status_code == 403
+                    and path.startswith("/vacancies")
+                    and '"type":"forbidden"' in response.text.replace(" ", "")
+                ):
+                    raise HHAuthorizationRequired(
+                        "HH принял User-Agent, но запретил доступ к вакансиям "
+                        "без авторизации приложения (HTTP 403 forbidden)."
+                    )
                 hint = ""
                 if response.status_code == 403 and path.startswith("/vacancies"):
                     hint = (

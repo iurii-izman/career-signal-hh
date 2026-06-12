@@ -17,6 +17,8 @@ SQLite, загружает подробности, рассчитывает пр
 > сможет получить вакансии, пока HH не разрешит доступ приложению. Проект не
 > обходит это ограничение и выводит понятную ошибку. Anonymous-справочники,
 > локальный scoring, SQLite и экспорт работают без OAuth.
+> При `403 forbidden` поиск останавливается после первого запроса, чтобы не
+> повторять десятки заведомо запрещённых обращений.
 
 ## Ограничения
 
@@ -46,15 +48,17 @@ source .venv/bin/activate
 Настройки `.env`:
 
 ```dotenv
-HH_USER_AGENT=CareerSignalHH/0.1 (contact: your-email@example.com)
+HH_USER_AGENT=CareerSignalHH/0.1 (+https://github.com/iurii-izman/career-signal-hh)
 DB_PATH=data/vacancies.sqlite
 REQUEST_DELAY_MIN=0.3
 REQUEST_DELAY_MAX=0.7
 ```
 
-Для `User-Agent` желательно указать реальный контакт согласно рекомендациям
-API. Дополнительных runtime-зависимостей сверх заданных нет. `pytest` включён
-в `requirements.txt` для простого локального MVP.
+Для `User-Agent` нужно указать уникальное название и реальный контакт или URL
+проекта. Placeholder-адреса вроде `your-email@example.com` HH отклоняет как
+`bad_user_agent/blacklisted`. При такой ошибке приложение завершает поиск после
+первого запроса. Дополнительных runtime-зависимостей сверх заданных нет.
+`pytest` включён в `requirements.txt` для простого локального MVP.
 
 ## Запуск
 
