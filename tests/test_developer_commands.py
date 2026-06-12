@@ -102,6 +102,17 @@ risks:
     with sqlite3.connect(tmp_path / "data" / "sample.sqlite") as connection:
         assert connection.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0] == 6
         assert connection.execute("SELECT COUNT(*) FROM scores").fetchone()[0] == 6
+        reviews = dict(
+            connection.execute(
+                "SELECT vacancy_id, status FROM vacancy_reviews"
+            ).fetchall()
+        )
+        assert reviews == {
+            "sample-ai-llm": "interesting",
+            "sample-ai-pm": "maybe",
+            "sample-bitrix": "applied",
+            "sample-low": "rejected",
+        }
     assert (tmp_path / "exports" / "vacancies_report.html").is_file()
     assert (tmp_path / "exports" / "vacancies.csv").is_file()
     assert (tmp_path / "exports" / "vacancies.jsonl").is_file()

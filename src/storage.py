@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -31,9 +32,32 @@ CREATE TABLE IF NOT EXISTS search_runs (
     loaded_count INTEGER, new_count INTEGER, updated_count INTEGER,
     error TEXT
 );
+CREATE TABLE IF NOT EXISTS vacancy_reviews (
+    vacancy_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'new',
+    priority INTEGER NULL,
+    user_notes TEXT NULL,
+    cover_letter_draft TEXT NULL,
+    applied_at TEXT NULL,
+    next_action TEXT NULL,
+    next_action_at TEXT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_vacancies_published ON vacancies(published_at);
 CREATE INDEX IF NOT EXISTS idx_scores_total ON scores(total_score);
+CREATE INDEX IF NOT EXISTS idx_reviews_status ON vacancy_reviews(status);
 """
+
+REVIEW_STATUSES = {
+    "new",
+    "interesting",
+    "maybe",
+    "rejected",
+    "applied",
+    "interview",
+    "offer",
+    "archived",
+}
 
 VACANCY_COLUMNS = [
     "id", "name", "employer_id", "employer_name", "area_name", "alternate_url",
@@ -50,6 +74,7 @@ class Storage:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+        self.ensure_review_schema()
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -60,6 +85,113 @@ class Storage:
             connection.commit()
         finally:
             connection.close()
+
+    def ensure_review_schema(self) -> None:
+        with self.connect() as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS vacancy_reviews (
+                    vacancy_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'new',
+                    priority INTEGER NULL,
+                    user_notes TEXT NULL,
+                    cover_letter_draft TEXT NULL,
+                    applied_at TEXT NULL,
+                    next_action TEXT NULL,
+                    next_action_at TEXT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_reviews_status
+                ON vacancy_reviews(status);
+                """
+            )
+
+    def _require_vacancy(self, vacancy_id: str) -> None:
+        if not self.vacancy_exists(vacancy_id):
+            raise ValueError(f"Вакансия с id={vacancy_id} не найдена.")
+
+    @staticmethod
+    def _validate_review_status(status: str) -> str:
+        normalized = status.strip().lower()
+        if normalized not in REVIEW_STATUSES:
+            allowed = ", ".join(sorted(REVIEW_STATUSES))
+            raise ValueError(
+                f"Недопустимый review status={status!r}. Допустимы: {allowed}."
+            )
+        return normalized
+
+    def get_review(self, vacancy_id: str) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM vacancy_reviews WHERE vacancy_id = ?",
+                (vacancy_id,),
+            ).fetchone()
+        if row:
+            return dict(row)
+        return {
+            "vacancy_id": vacancy_id,
+            "status": "new",
+            "priority": None,
+            "user_notes": None,
+            "cover_letter_draft": None,
+            "applied_at": None,
+            "next_action": None,
+            "next_action_at": None,
+            "updated_at": None,
+        }
+
+    def upsert_review(self, vacancy_id: str, **fields: Any) -> dict[str, Any]:
+        self._require_vacancy(vacancy_id)
+        allowed_fields = {
+            "status",
+            "priority",
+            "user_notes",
+            "cover_letter_draft",
+            "applied_at",
+            "next_action",
+            "next_action_at",
+        }
+        unknown = set(fields) - allowed_fields
+        if unknown:
+            raise ValueError(f"Неизвестные review-поля: {', '.join(sorted(unknown))}.")
+        if "status" in fields:
+            fields["status"] = self._validate_review_status(str(fields["status"]))
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO vacancy_reviews (vacancy_id, status, updated_at)
+                VALUES (?, 'new', ?)
+                ON CONFLICT(vacancy_id) DO NOTHING
+                """,
+                (vacancy_id, now),
+            )
+            if fields:
+                assignments = ", ".join(f"{field} = ?" for field in fields)
+                connection.execute(
+                    f"UPDATE vacancy_reviews SET {assignments}, updated_at = ? "
+                    "WHERE vacancy_id = ?",
+                    [*fields.values(), now, vacancy_id],
+                )
+        return self.get_review(vacancy_id)
+
+    def set_review_status(self, vacancy_id: str, status: str) -> dict[str, Any]:
+        return self.upsert_review(vacancy_id, status=status)
+
+    def set_review_note(self, vacancy_id: str, note: str) -> dict[str, Any]:
+        return self.upsert_review(vacancy_id, user_notes=note)
+
+    def mark_applied(self, vacancy_id: str, applied_at: str) -> dict[str, Any]:
+        return self.upsert_review(
+            vacancy_id, status="applied", applied_at=applied_at
+        )
+
+    def set_next_action(
+        self, vacancy_id: str, action: str, next_action_at: str
+    ) -> dict[str, Any]:
+        return self.upsert_review(
+            vacancy_id, next_action=action, next_action_at=next_action_at
+        )
 
     def vacancy_exists(self, vacancy_id: str) -> bool:
         with self.connect() as connection:
@@ -137,14 +269,57 @@ class Storage:
         sql = f"""
             SELECT v.*, s.total_score, s.ai_automation_score, s.bitrix_1c_score,
                    s.best_profile, s.match_reasons_json, s.risk_flags_json,
-                   s.work_format_flags_json, s.scored_at
+                   s.work_format_flags_json, s.scored_at,
+                   COALESCE(r.status, 'new') review_status,
+                   r.priority, r.user_notes, r.cover_letter_draft,
+                   r.applied_at, r.next_action, r.next_action_at,
+                   r.updated_at review_updated_at
             FROM vacancies v LEFT JOIN scores s ON s.vacancy_id = v.id
+            LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
             WHERE {' AND '.join(where)}
             ORDER BY COALESCE(s.total_score, 0) DESC, v.published_at DESC
         """
         if limit:
             sql += " LIMIT ?"
             params.append(limit)
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+
+    def list_reviewed_vacancies(
+        self,
+        status: str | None = None,
+        min_score: int = 0,
+        limit: int = 30,
+        profile: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where = ["COALESCE(s.total_score, 0) >= ?"]
+        params: list[Any] = [min_score]
+        if status:
+            where.append("COALESCE(r.status, 'new') = ?")
+            params.append(self._validate_review_status(status))
+        if profile:
+            where.append(
+                "(s.best_profile = ? OR (? = 'ai_automation' AND "
+                "s.ai_automation_score >= 15) OR (? = 'bitrix_1c' AND "
+                "s.bitrix_1c_score >= 15))"
+            )
+            params.extend([profile, profile, profile])
+        params.append(limit)
+        sql = f"""
+            SELECT v.id, v.name, v.employer_name, v.area_name, v.alternate_url,
+                   COALESCE(s.total_score, 0) total_score, s.best_profile,
+                   COALESCE(r.status, 'new') review_status,
+                   r.priority, r.user_notes, r.applied_at,
+                   r.next_action, r.next_action_at,
+                   COALESCE(r.updated_at, v.last_seen_at) review_updated_at
+            FROM vacancies v
+            LEFT JOIN scores s ON s.vacancy_id = v.id
+            LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+            WHERE {' AND '.join(where)}
+            ORDER BY COALESCE(r.updated_at, v.last_seen_at) DESC,
+                     COALESCE(s.total_score, 0) DESC
+            LIMIT ?
+        """
         with self.connect() as connection:
             return [dict(row) for row in connection.execute(sql, params).fetchall()]
 

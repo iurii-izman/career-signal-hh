@@ -13,7 +13,8 @@ CSV_FIELDS = [
     "id", "total_score", "best_profile", "name", "employer_name", "area_name",
     "salary_from", "salary_to", "salary_currency", "schedule_name",
     "employment_name", "experience_name", "published_at", "match_reasons",
-    "risk_flags", "alternate_url",
+    "risk_flags", "review_status", "priority", "user_notes", "applied_at",
+    "next_action", "next_action_at", "alternate_url",
 ]
 
 
