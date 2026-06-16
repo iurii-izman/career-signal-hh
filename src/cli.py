@@ -10,9 +10,15 @@ from .commands.presets import command_presets_list, command_presets_show
 from .commands.profiles import command_profiles
 from .commands.review import (
     command_review_apply,
+    command_review_bulk_archive,
+    command_review_bulk_interesting,
+    command_review_bulk_reject,
+    command_review_bulk_set,
     command_review_list,
     command_review_next,
+    command_review_next_best,
     command_review_note,
+    command_review_queue,
     command_review_set,
 )
 from .commands.sample import command_sample_export
@@ -194,6 +200,63 @@ def build_parser() -> argparse.ArgumentParser:
     review_next.add_argument("--action", required=True)
     review_next.add_argument("--date", required=True)
     review_next.set_defaults(func=command_review_next)
+
+    # --- review queue ---
+    review_queue = review_sub.add_parser("queue")
+    review_queue.add_argument(
+        "--decision", help="Comma-separated decisions (default: strong_match,queue)"
+    )
+    review_queue.add_argument("--min-score", type=int, default=0)
+    review_queue.add_argument("--preset")
+    review_queue.add_argument("--profile", default=None)
+    review_queue.add_argument("--status", choices=sorted(REVIEW_STATUSES))
+    review_queue.add_argument("--limit", type=int, default=20)
+    review_queue.add_argument("--remote-only", action="store_true")
+    review_queue.add_argument("--with-salary", action="store_true")
+    review_queue.add_argument("--hide-risk", action="store_true")
+    review_queue.add_argument("--new-only", action="store_true")
+    review_queue.set_defaults(func=command_review_queue)
+
+    # --- review next-best ---
+    review_next_best = review_sub.add_parser("next-best")
+    review_next_best.set_defaults(func=command_review_next_best)
+
+    # --- bulk archive ---
+    bulk_archive = review_sub.add_parser("bulk-archive")
+    bulk_archive.add_argument("--decision", default="auto_hide")
+    bulk_archive.add_argument("--force", action="store_true")
+    bulk_archive.add_argument("-y", "--yes", action="store_true")
+    bulk_archive.set_defaults(func=command_review_bulk_archive)
+
+    # --- bulk reject ---
+    bulk_reject = review_sub.add_parser("bulk-reject")
+    bulk_reject.add_argument("--max-score", type=int, default=35)
+    bulk_reject.add_argument("--force", action="store_true")
+    bulk_reject.add_argument("-y", "--yes", action="store_true")
+    bulk_reject.set_defaults(func=command_review_bulk_reject)
+
+    # --- bulk interesting ---
+    bulk_interesting = review_sub.add_parser("bulk-interesting")
+    bulk_interesting.add_argument("--min-score", type=int, default=85)
+    bulk_interesting.add_argument("--decision", default="strong_match")
+    bulk_interesting.add_argument("--force", action="store_true")
+    bulk_interesting.add_argument("-y", "--yes", action="store_true")
+    bulk_interesting.set_defaults(func=command_review_bulk_interesting)
+
+    # --- bulk set ---
+    bulk_set = review_sub.add_parser("bulk-set")
+    bulk_set.add_argument(
+        "--new-status", required=True, choices=sorted(REVIEW_STATUSES)
+    )
+    bulk_set.add_argument("--min-score", type=int)
+    bulk_set.add_argument("--max-score", type=int)
+    bulk_set.add_argument("--decision")
+    bulk_set.add_argument("--preset")
+    bulk_set.add_argument("--status", choices=sorted(REVIEW_STATUSES))
+    bulk_set.add_argument("--force", action="store_true")
+    bulk_set.add_argument("-y", "--yes", action="store_true")
+    bulk_set.set_defaults(func=command_review_bulk_set)
+
     return parser
 
 

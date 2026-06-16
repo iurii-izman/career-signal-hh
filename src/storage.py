@@ -513,3 +513,200 @@ class Storage:
             "areas": [dict(row) for row in areas],
             "profiles": [dict(row) for row in profiles],
         }
+
+    # ------------------------------------------------------------------
+    # Review queue methods
+    # ------------------------------------------------------------------
+
+    REVIEW_PROTECTED_STATUSES = {"applied", "interview", "offer"}
+
+    def list_queue(
+        self,
+        *,
+        min_score: int = 0,
+        max_score: int | None = None,
+        decision: str | None = None,
+        decisions: list[str] | None = None,
+        preset: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+        remote_only: bool = False,
+        with_salary: bool = False,
+        hide_risk: bool = False,
+        new_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Flexible queue query with score, decision, preset, status filters."""
+        where = ["COALESCE(v.archived, 0) = 0"]
+        params: list[Any] = []
+
+        if min_score:
+            where.append("COALESCE(s.total_score, 0) >= ?")
+            params.append(min_score)
+
+        if max_score is not None:
+            where.append("COALESCE(s.total_score, 0) <= ?")
+            params.append(max_score)
+
+        if decision:
+            where.append("sd.decision = ?")
+            params.append(decision)
+        elif decisions:
+            placeholders = ", ".join("?" for _ in decisions)
+            where.append(f"sd.decision IN ({placeholders})")
+            params.extend(decisions)
+
+        if preset:
+            where.append("(s.best_profile = ? OR sd.preset_name = ?)")
+            params.extend([preset, preset])
+
+        if status:
+            where.append("COALESCE(r.status, 'new') = ?")
+            params.append(self._validate_review_status(status))
+
+        if new_only:
+            where.append("COALESCE(r.status, 'new') = 'new'")
+
+        if remote_only:
+            where.append("s.work_format_flags_json LIKE '%remote%'")
+
+        if with_salary:
+            where.append("(v.salary_from IS NOT NULL OR v.salary_to IS NOT NULL)")
+
+        if hide_risk:
+            where.append("(s.risk_flags_json IS NULL OR s.risk_flags_json = '[]')")
+
+        params.append(limit)
+
+        sql = f"""
+            SELECT v.id, v.name, v.employer_name, v.area_name, v.alternate_url,
+                   v.salary_from, v.salary_to, v.salary_currency,
+                   v.schedule_name, v.published_at,
+                   COALESCE(s.total_score, 0) total_score,
+                   s.best_profile, s.risk_flags_json,
+                   COALESCE(sd.decision, 'unknown') decision,
+                   COALESCE(r.status, 'new') review_status,
+                   r.priority, r.user_notes, r.applied_at,
+                   r.next_action, r.next_action_at
+            FROM vacancies v
+            LEFT JOIN scores s ON s.vacancy_id = v.id
+            LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+            LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+            WHERE {" AND ".join(where)}
+            ORDER BY COALESCE(s.total_score, 0) DESC, v.published_at DESC
+            LIMIT ?
+        """
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+
+    def bulk_update_review_status(
+        self,
+        *,
+        min_score: int | None = None,
+        max_score: int | None = None,
+        decision: str | None = None,
+        preset: str | None = None,
+        status: str | None = None,
+        new_status: str = "archived",
+        force: bool = False,
+    ) -> dict[str, int]:
+        """Bulk update review status with protection for applied/interview/offer.
+
+        Returns dict with matched_count, updated_count, skipped_protected_count.
+        """
+        normalized_new = self._validate_review_status(new_status)
+
+        where = ["COALESCE(v.archived, 0) = 0"]
+        params: list[Any] = []
+
+        if min_score is not None:
+            where.append("COALESCE(s.total_score, 0) >= ?")
+            params.append(min_score)
+        if max_score is not None:
+            where.append("COALESCE(s.total_score, 0) <= ?")
+            params.append(max_score)
+        if decision:
+            where.append("sd.decision = ?")
+            params.append(decision)
+        if preset:
+            where.append("(s.best_profile = ? OR sd.preset_name = ?)")
+            params.extend([preset, preset])
+        if status:
+            where.append("COALESCE(r.status, 'new') = ?")
+            params.append(self._validate_review_status(status))
+
+        protected = self.REVIEW_PROTECTED_STATUSES
+        now = datetime.now(timezone.utc).isoformat()
+
+        with self.connect() as connection:
+            # Count matched
+            count_sql = f"""
+                SELECT COUNT(*) FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                WHERE {" AND ".join(where)}
+            """
+            matched = connection.execute(count_sql, params).fetchone()[0]
+
+            # Count protected
+            if not force and protected:
+                p_placeholders = ", ".join("?" for _ in protected)
+                protected_where = where + [
+                    f"COALESCE(r.status, 'new') IN ({p_placeholders})"
+                ]
+                protected_params = params + list(protected)
+                protected_sql = f"""
+                    SELECT COUNT(*) FROM vacancies v
+                    LEFT JOIN scores s ON s.vacancy_id = v.id
+                    LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                    LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                    WHERE {" AND ".join(protected_where)}
+                """
+                skipped = connection.execute(
+                    protected_sql, protected_params
+                ).fetchone()[0]
+            else:
+                skipped = 0
+
+            # Update non-protected
+            update_where = list(where)  # copy for modification
+            update_params_list: list[Any] = [normalized_new, now] + list(params)
+            if not force and protected:
+                p_placeholders = ", ".join("?" for _ in protected)
+                update_where.append(
+                    f"COALESCE(r.status, 'new') NOT IN ({p_placeholders})"
+                )
+                update_params_list.extend(protected)
+
+            set_clause = "status = ?, updated_at = ?"
+            update_sql = f"""
+                UPDATE vacancy_reviews
+                SET {set_clause}
+                WHERE vacancy_id IN (
+                    SELECT v.id FROM vacancies v
+                    LEFT JOIN scores s ON s.vacancy_id = v.id
+                    LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                    LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                    WHERE {" AND ".join(update_where)}
+                )
+            """
+            cursor = connection.execute(update_sql, update_params_list)
+            updated = cursor.rowcount
+
+            # For matched vacancies without a review row, insert one
+            insert_sql = f"""
+                INSERT OR IGNORE INTO vacancy_reviews (vacancy_id, status, updated_at)
+                SELECT v.id, ?, ?
+                FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                WHERE {" AND ".join(where)}
+            """
+            connection.execute(insert_sql, [normalized_new, now] + params)
+
+        return {
+            "matched_count": matched,
+            "updated_count": updated,
+            "skipped_protected_count": skipped,
+        }

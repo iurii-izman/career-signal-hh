@@ -334,6 +334,29 @@ python -c "from src.hh_client import HHClient; import os, json; from dotenv impo
 Параметры `schedule` и `experience` отправляются как повторяющиеся query
 parameters. Их допустимые значения следует сверять с `GET /dictionaries`.
 
+## Daily review queue
+
+Удобная очередь для ручного отбора лучших кандидатов.
+
+```powershell
+# Топ-15 новых сильных совпадений
+python -m src.main review next-best
+
+# Полная очередь с фильтрами
+python -m src.main review queue --preset ai_rag_remote --limit 20
+python -m src.main review queue --min-score 70 --decision strong_match,queue --new-only
+python -m src.main review queue --remote-only --with-salary --limit 30
+
+# Bulk-действия
+python -m src.main review bulk-archive --decision auto_hide --yes
+python -m src.main review bulk-reject --max-score 35 --yes
+python -m src.main review bulk-interesting --min-score 85 --decision strong_match --yes
+python -m src.main review bulk-set --new-status maybe --min-score 60 --max-score 69 --yes
+```
+
+Protected statuses (`applied`, `interview`, `offer`) не перезаписываются
+без `--force`. Summary показывает matched/updated/skipped_protected.
+
 ## Scoring v2 (explainable)
 
 Новый scoring с полевыми весами, отслеживанием ключевых слов и decision labels.
