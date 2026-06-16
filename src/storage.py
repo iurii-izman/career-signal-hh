@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -236,6 +236,50 @@ class Storage:
                 (vacancy_id,),
             ).fetchone()
         return row["description_text"] if row else None
+
+    def detail_needed(
+        self,
+        vacancy_id: str,
+        *,
+        force: bool = False,
+        refresh_days: int | None = None,
+    ) -> bool:
+        """Decide whether a detail API fetch is needed for this vacancy.
+
+        Returns True if:
+        - force is True (always refresh)
+        - vacancy is new (not in DB)
+        - description_text is empty
+        - last_seen_at is older than refresh_days
+        """
+        if force:
+            return True
+
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT description_text, last_seen_at FROM vacancies WHERE id = ?",
+                (vacancy_id,),
+            ).fetchone()
+
+        if row is None:
+            return True
+
+        desc = row["description_text"] or ""
+        if not desc.strip():
+            return True
+
+        if refresh_days is not None and refresh_days > 0:
+            last_seen = row["last_seen_at"]
+            if last_seen:
+                try:
+                    last_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    return False
+                cutoff = datetime.now(timezone.utc) - timedelta(days=refresh_days)
+                if last_dt < cutoff:
+                    return True
+
+        return False
 
     def upsert_vacancy(self, vacancy: Vacancy) -> bool:
         is_new = not self.vacancy_exists(vacancy.id)

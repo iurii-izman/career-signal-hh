@@ -108,49 +108,6 @@ def _resolve_search_config(args: argparse.Namespace) -> dict[str, Any]:
     return preset
 
 
-def _should_fetch_detail(
-    vacancy_id: str,
-    storage: Storage,
-    force_details: bool,
-    detail_refresh_days: int | None,
-) -> bool:
-    """Decide whether a detail fetch is needed for the given vacancy_id.
-
-    Returns True if detail should be fetched.
-    """
-    if force_details:
-        return True
-
-    with storage.connect() as connection:
-        row = connection.execute(
-            "SELECT description_text, last_seen_at FROM vacancies WHERE id = ?",
-            (vacancy_id,),
-        ).fetchone()
-
-    if row is None:
-        # New vacancy — always fetch
-        return True
-
-    desc = row["description_text"] or ""
-    if not desc.strip():
-        # Existing but empty description — fetch
-        return True
-
-    # Description exists. Check if it's older than refresh threshold.
-    if detail_refresh_days is not None and detail_refresh_days > 0:
-        last_seen = row["last_seen_at"]
-        if last_seen:
-            try:
-                last_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                return False
-            cutoff = datetime.now(timezone.utc) - timedelta(days=detail_refresh_days)
-            if last_dt < cutoff:
-                return True
-
-    return False
-
-
 def _print_run_estimate(
     selected: dict[str, Any],
     search_config: dict[str, Any],
@@ -181,13 +138,18 @@ def _print_run_estimate(
     table.add_row("Total query × area combos", str(total_queries))
     table.add_row("Max pages per combo", str(max_pages))
     table.add_row("Per page", str(per_page))
-    table.add_row(
-        "Est. search requests",
-        f"[yellow]{est_search}[/yellow] (profiles × queries × areas × pages)",
+
+    budget_max = search_config["max_requests_per_run"]
+    within_budget = est_search <= budget_max
+    est_label = (
+        f"[green]{est_search}[/green] (within budget)"
+        if within_budget
+        else f"[yellow]{est_search}[/yellow] [red]EXCEEDS budget of {budget_max}![/red]"
     )
+    table.add_row("Est. search requests", est_label)
     table.add_row(
         "Max requests per run (total budget)",
-        str(search_config["max_requests_per_run"]),
+        str(budget_max),
     )
     table.add_row(
         "Max detail fetches per run",
@@ -715,8 +677,6 @@ def command_review_next(args: argparse.Namespace) -> int:
 
 
 def command_search(args: argparse.Namespace) -> int:
-    load_dotenv()
-
     try:
         profiles = load_search_profiles()
     except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -727,12 +687,12 @@ def command_search(args: argparse.Namespace) -> int:
     search_config = _resolve_search_config(args)
     search_config["_mode_name"] = args.mode or "normal"
     search_config["_force_details"] = args.force_details
+    verbose = args.verbose
 
     # Select profiles
     if args.profile:
         selected = {args.profile: profiles.get(args.profile)}
     elif search_config.get("single_profile"):
-        # Smoke mode: pick the first enabled profile
         first_enabled = next(
             (n for n, c in profiles.items() if c and c.get("enabled", True)),
             None,
@@ -757,7 +717,6 @@ def command_search(args: argparse.Namespace) -> int:
 
     # --- dry-run: show estimate and exit ---
     if args.dry_run:
-        # Create a temp client just to show auth mode and rate limiting config
         client = HHClient()
         _print_run_estimate(selected, search_config, client)
         console.print(
@@ -765,10 +724,9 @@ def command_search(args: argparse.Namespace) -> int:
         )
         return 0
 
-    # --- real run: initialize services ---
+    # --- real run ---
     storage, client, rules = _services()
 
-    # Set up budget
     client.set_budget(
         max_requests=search_config["max_requests_per_run"],
         max_details=search_config["max_detail_fetches_per_run"],
@@ -794,9 +752,8 @@ def command_search(args: argparse.Namespace) -> int:
             return 0
 
     # Detail refresh threshold from env
-    detail_refresh_days_str = os.getenv("HH_DETAIL_REFRESH_DAYS", "7")
     try:
-        detail_refresh_days = int(detail_refresh_days_str)
+        detail_refresh_days = int(os.getenv("HH_DETAIL_REFRESH_DAYS", "7"))
     except ValueError:
         detail_refresh_days = 7
 
@@ -813,7 +770,7 @@ def command_search(args: argparse.Namespace) -> int:
         "skipped_by_budget": 0,
     }
     run_started = datetime.now(timezone.utc)
-
+    exit_code = 0
     stop_all = False
 
     for profile_name, config in selected.items():
@@ -837,7 +794,6 @@ def command_search(args: argparse.Namespace) -> int:
 
                 try:
                     for page in range(max_pages):
-                        # Check total request budget before search call
                         if not client.can_request("search"):
                             console.print(
                                 "[yellow]Request budget reached. Partial results were saved.[/yellow]"
@@ -860,6 +816,8 @@ def command_search(args: argparse.Namespace) -> int:
 
                         items = result.get("items") or []
                         counters["found_count"] += len(items)
+                        if verbose:
+                            console.print(f"  page {page + 1}: {len(items)} items")
 
                         for summary in items:
                             vacancy_id = str(summary.get("id", ""))
@@ -867,27 +825,23 @@ def command_search(args: argparse.Namespace) -> int:
                                 continue
                             seen_this_run.add(vacancy_id)
 
-                            # Smart detail fetch decision
                             try:
-                                if _should_fetch_detail(
+                                if storage.detail_needed(
                                     vacancy_id,
-                                    storage,
-                                    force_details,
-                                    detail_refresh_days,
+                                    force=force_details,
+                                    refresh_days=detail_refresh_days,
                                 ):
-                                    # Check detail budget
                                     if not client.can_request("detail"):
-                                        console.print(
-                                            "[yellow]Detail request budget reached. "
-                                            "Saving remaining vacancies without details.[/yellow]"
-                                        )
+                                        if not run_counters["skipped_by_budget"]:
+                                            console.print(
+                                                "[yellow]Detail request budget reached. "
+                                                "Saving remaining vacancies without details.[/yellow]"
+                                            )
                                         run_counters["skipped_by_budget"] += 1
                                         if storage.vacancy_exists(vacancy_id):
-                                            # Existing — just touch, don't overwrite good data
                                             storage.touch_vacancy(vacancy_id)
                                             counters["updated_count"] += 1
                                         else:
-                                            # New vacancy — save basic data from search summary
                                             vacancy = Vacancy.from_hh(
                                                 summary, profile_name
                                             )
@@ -905,12 +859,19 @@ def command_search(args: argparse.Namespace) -> int:
 
                                     detail = client.get_vacancy(vacancy_id)
                                     vacancy = Vacancy.from_hh(detail, profile_name)
+                                    if verbose:
+                                        console.print(
+                                            f"    detail: {vacancy.name[:60]}"
+                                        )
                                 else:
-                                    # Detail already exists — skip fetch, just touch last_seen_at
                                     run_counters["skipped_existing_details"] += 1
                                     storage.touch_vacancy(vacancy_id)
                                     counters["updated_count"] += 1
                                     counters["loaded_count"] += 1
+                                    if verbose:
+                                        console.print(
+                                            f"    skip: {summary.get('name', '')[:60]}"
+                                        )
                                     continue
 
                                 is_new = storage.upsert_vacancy(vacancy)
@@ -932,53 +893,32 @@ def command_search(args: argparse.Namespace) -> int:
                                     "Вакансия %s пропущена: %s", vacancy_id, exc
                                 )
 
-                        # Stop pagination if we've reached the last page
                         if page + 1 >= int(result.get("pages", 0)) or not items:
                             break
 
                 except HHConfigurationError as exc:
                     error = str(exc)
                     logging.error("%s", exc)
-                    storage.add_search_run(
-                        {
-                            "started_at": started,
-                            "finished_at": datetime.now(timezone.utc).isoformat(),
-                            "profile_name": profile_name,
-                            "query": query,
-                            "area_id": str(area) if area is not None else None,
-                            **counters,
-                            "error": error,
-                        }
-                    )
                     console.print(f"[red]Поиск остановлен: {exc}[/red]")
-                    return 2
+                    exit_code = 2
+                    stop_all = True
                 except HHAuthorizationRequired as exc:
                     error = str(exc)
                     logging.error("%s", exc)
-                    storage.add_search_run(
-                        {
-                            "started_at": started,
-                            "finished_at": datetime.now(timezone.utc).isoformat(),
-                            "profile_name": profile_name,
-                            "query": query,
-                            "area_id": str(area) if area is not None else None,
-                            **counters,
-                            "error": error,
-                        }
-                    )
                     console.print(
                         "[yellow]Поиск остановлен: HH API сейчас требует "
                         "авторизацию приложения для доступа к вакансиям.[/yellow]"
                     )
-                    return 3
+                    exit_code = 3
+                    stop_all = True
                 except NotImplementedError as exc:
                     logging.error("%s", exc)
                     console.print(f"[red]Поиск остановлен: {exc}[/red]")
-                    return 4
+                    exit_code = 4
+                    stop_all = True
                 except HHAPIError as exc:
                     error = str(exc)
                     logging.error("%s / %s / %s: %s", profile_name, query, area, exc)
-                    # Check if it's a 429 stop
                     if "429" in str(exc) or "rate limit" in str(exc).lower():
                         console.print(
                             "[yellow]Search stopped due to HH API rate limit (429). "
@@ -986,7 +926,6 @@ def command_search(args: argparse.Namespace) -> int:
                         )
                         stop_all = True
 
-                # Accumulate run counters
                 for key in ("new_count", "updated_count"):
                     run_counters[key] += counters[key]
 
@@ -1005,12 +944,12 @@ def command_search(args: argparse.Namespace) -> int:
                     f"{profile_name}: {query} / {area}: {counters['loaded_count']} загружено"
                 )
 
-    # --- run summary ---
+    # --- run summary (always printed, even on early exit) ---
     _print_run_summary(
         run_started, search_config, client, profiles_processed, run_counters
     )
 
-    return 0
+    return exit_code
 
 
 def command_export(args: argparse.Namespace) -> int:
@@ -1111,6 +1050,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-details",
         action="store_true",
         help="Force refresh vacancy details even if already cached.",
+    )
+    search.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show per-page and per-vacancy progress during search.",
     )
     search.add_argument(
         "-y",

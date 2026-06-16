@@ -123,6 +123,7 @@ def test_mode_overrides() -> None:
         max_pages=5,
         per_page=100,
         force_details=False,
+        verbose=False,
         yes=False,
     )
     config = main._resolve_search_config(args)
@@ -203,7 +204,7 @@ def test_budget_none_allows_all() -> None:
 def test_new_vacancy_fetches_detail(tmp_path: Path) -> None:
     """A vacancy not in DB should always trigger a detail fetch."""
     storage = Storage(str(tmp_path / "test.sqlite"))
-    assert main._should_fetch_detail("nonexistent-id", storage, False, 7) is True
+    assert storage.detail_needed("nonexistent-id") is True
 
 
 def test_existing_vacancy_with_description_skips_detail(tmp_path: Path) -> None:
@@ -220,7 +221,7 @@ def test_existing_vacancy_with_description_skips_detail(tmp_path: Path) -> None:
             last_seen_at=now,
         )
     )
-    assert main._should_fetch_detail("v1", storage, False, 7) is False
+    assert storage.detail_needed("v1") is False
 
 
 def test_existing_vacancy_without_description_fetches_detail(tmp_path: Path) -> None:
@@ -237,7 +238,7 @@ def test_existing_vacancy_without_description_fetches_detail(tmp_path: Path) -> 
             last_seen_at=now,
         )
     )
-    assert main._should_fetch_detail("v2", storage, False, 7) is True
+    assert storage.detail_needed("v2") is True
 
 
 def test_stale_vacancy_refreshes_detail(tmp_path: Path) -> None:
@@ -254,7 +255,7 @@ def test_stale_vacancy_refreshes_detail(tmp_path: Path) -> None:
             last_seen_at=stale,
         )
     )
-    assert main._should_fetch_detail("v3", storage, False, 7) is True
+    assert storage.detail_needed("v3", refresh_days=7) is True
 
 
 def test_recent_vacancy_skips_detail(tmp_path: Path) -> None:
@@ -271,7 +272,7 @@ def test_recent_vacancy_skips_detail(tmp_path: Path) -> None:
             last_seen_at=recent,
         )
     )
-    assert main._should_fetch_detail("v4", storage, False, 7) is False
+    assert storage.detail_needed("v4", refresh_days=7) is False
 
 
 def test_force_details_overrides_cache(tmp_path: Path) -> None:
@@ -288,7 +289,7 @@ def test_force_details_overrides_cache(tmp_path: Path) -> None:
             last_seen_at=now,
         )
     )
-    assert main._should_fetch_detail("v5", storage, True, 7) is True
+    assert storage.detail_needed("v5", force=True, refresh_days=7) is True
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +329,7 @@ def test_dry_run_does_not_make_api_calls(
             profile=None,
             dry_run=True,
             force_details=False,
+            verbose=False,
             yes=False,
         )
     )
@@ -355,6 +357,7 @@ def test_dry_run_smoke_shows_estimate(
             profile=None,
             dry_run=True,
             force_details=False,
+            verbose=False,
             yes=False,
         )
     )
@@ -423,6 +426,7 @@ def test_smoke_mode_selects_single_enabled_profile(
             profile=None,
             dry_run=True,
             force_details=False,
+            verbose=False,
             yes=False,
         )
     )
@@ -525,6 +529,7 @@ def test_budget_stops_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             profile=None,
             dry_run=False,
             force_details=False,
+            verbose=False,
             yes=False,
         )
     )
@@ -568,6 +573,7 @@ def test_429_stops_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             profile=None,
             dry_run=False,
             force_details=False,
+            verbose=False,
             yes=False,
         )
     )
@@ -610,6 +616,7 @@ def test_force_details_does_not_ignore_budget(
             profile=None,
             dry_run=False,
             force_details=True,
+            verbose=False,
             yes=False,
         )
     )
@@ -695,6 +702,7 @@ def test_skip_detail_preserves_description(
             profile=None,
             dry_run=False,
             force_details=False,
+            verbose=False,
             yes=False,
         )
     )
