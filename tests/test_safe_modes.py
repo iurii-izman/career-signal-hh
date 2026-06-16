@@ -619,3 +619,101 @@ def test_force_details_does_not_ignore_budget(
     # With force_details, detail calls should be made but within budget
     # Smoke mode max_details=25, max_requests=50
     assert fake_api.detail_calls <= 25
+
+
+# ---------------------------------------------------------------------------
+# Description preservation tests (regression for skip-detail overwrite bug)
+# ---------------------------------------------------------------------------
+
+
+def test_touch_vacancy_preserves_description(tmp_path: Path) -> None:
+    """touch_vacancy should update last_seen_at without touching description_text."""
+    storage = Storage(str(tmp_path / "touch.sqlite"))
+    now = datetime.now(timezone.utc).isoformat()
+    original_desc = "Original description that must be preserved"
+    storage.upsert_vacancy(
+        Vacancy(
+            id="v-touch",
+            name="Test",
+            description_text=original_desc,
+            raw_json="{}",
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+    )
+
+    assert storage.touch_vacancy("v-touch") is True
+    desc = storage.get_vacancy_description("v-touch")
+    assert desc == original_desc
+    assert storage.touch_vacancy("nonexistent") is False
+
+
+def test_skip_detail_preserves_description(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a vacancy already has a description, skip-detail should preserve it."""
+    _make_minimal_profiles(tmp_path, monkeypatch)
+    _make_scoring_rules(tmp_path)
+    monkeypatch.setenv("DB_PATH", "data/skip_desc.sqlite")
+    monkeypatch.delenv("HH_AUTH_MODE", raising=False)
+    monkeypatch.setenv("HH_AUTH_MODE", "none")
+    monkeypatch.setenv("HH_DELAY_MIN_SECONDS", "0")
+    monkeypatch.setenv("HH_DELAY_MAX_SECONDS", "0")
+    monkeypatch.setenv("HH_DETAIL_REFRESH_DAYS", "30")
+
+    storage = Storage("data/skip_desc.sqlite")
+    now = datetime.now(timezone.utc).isoformat()
+    original_desc = "Preserved description"
+    storage.upsert_vacancy(
+        Vacancy(
+            id="fake-1",
+            name="Existing Vacancy",
+            description_text=original_desc,
+            raw_json="{}",
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+    )
+
+    output = _record_console(monkeypatch)
+    fake_api = _FakeSearchResponse()
+
+    original_init = main.HHClient.__init__
+
+    def fake_init(self: HHClient, *args: Any, **kwargs: Any) -> None:
+        original_init(self, *args, **kwargs)
+        self.search_vacancies = fake_api.search_vacancies
+        self.get_vacancy = fake_api.get_vacancy
+
+    monkeypatch.setattr(main.HHClient, "__init__", fake_init)
+
+    result = main.command_search(
+        Namespace(
+            mode="smoke",
+            max_pages=None,
+            per_page=None,
+            profile=None,
+            dry_run=False,
+            force_details=False,
+            yes=False,
+        )
+    )
+
+    assert result == 0
+    storage2 = Storage("data/skip_desc.sqlite")
+    desc = storage2.get_vacancy_description("fake-1")
+    assert desc == original_desc, (
+        f"Description was overwritten! Expected '{original_desc}', got '{desc}'"
+    )
+
+
+def test_touch_vacancy_returns_false_for_unknown_id(tmp_path: Path) -> None:
+    """touch_vacancy should return False when vacancy doesn't exist."""
+    storage = Storage(str(tmp_path / "touch2.sqlite"))
+    assert storage.touch_vacancy("no-such-id") is False
+
+
+def test_get_vacancy_description_returns_none_for_unknown(tmp_path: Path) -> None:
+    """get_vacancy_description should return None for unknown vacancy."""
+    storage = Storage(str(tmp_path / "desc2.sqlite"))
+    assert storage.get_vacancy_description("no-such-id") is None

@@ -60,11 +60,28 @@ REVIEW_STATUSES = {
 }
 
 VACANCY_COLUMNS = [
-    "id", "name", "employer_id", "employer_name", "area_name", "alternate_url",
-    "published_at", "created_at", "archived", "salary_from", "salary_to",
-    "salary_currency", "schedule_name", "employment_name", "experience_name",
-    "description_html", "description_text", "key_skills_json", "raw_json",
-    "first_seen_at", "last_seen_at", "source_profile",
+    "id",
+    "name",
+    "employer_id",
+    "employer_name",
+    "area_name",
+    "alternate_url",
+    "published_at",
+    "created_at",
+    "archived",
+    "salary_from",
+    "salary_to",
+    "salary_currency",
+    "schedule_name",
+    "employment_name",
+    "experience_name",
+    "description_html",
+    "description_text",
+    "key_skills_json",
+    "raw_json",
+    "first_seen_at",
+    "last_seen_at",
+    "source_profile",
 ]
 
 
@@ -182,9 +199,7 @@ class Storage:
         return self.upsert_review(vacancy_id, user_notes=note)
 
     def mark_applied(self, vacancy_id: str, applied_at: str) -> dict[str, Any]:
-        return self.upsert_review(
-            vacancy_id, status="applied", applied_at=applied_at
-        )
+        return self.upsert_review(vacancy_id, status="applied", applied_at=applied_at)
 
     def set_next_action(
         self, vacancy_id: str, action: str, next_action_at: str
@@ -199,6 +214,28 @@ class Storage:
                 "SELECT 1 FROM vacancies WHERE id = ?", (vacancy_id,)
             ).fetchone()
         return row is not None
+
+    def touch_vacancy(self, vacancy_id: str) -> bool:
+        """Update last_seen_at for an existing vacancy without touching other fields.
+
+        Returns True if the vacancy exists and was updated, False otherwise.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE vacancies SET last_seen_at = ? WHERE id = ?",
+                (now, vacancy_id),
+            )
+            return cursor.rowcount > 0
+
+    def get_vacancy_description(self, vacancy_id: str) -> str | None:
+        """Return description_text for a vacancy, or None if not found."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT description_text FROM vacancies WHERE id = ?",
+                (vacancy_id,),
+            ).fetchone()
+        return row["description_text"] if row else None
 
     def upsert_vacancy(self, vacancy: Vacancy) -> bool:
         is_new = not self.vacancy_exists(vacancy.id)
@@ -229,7 +266,9 @@ class Storage:
         values["work_format_flags_json"] = json_dumps(values.pop("work_format_flags"))
         columns = list(values)
         updates = ", ".join(
-            f"{column}=excluded.{column}" for column in columns if column != "vacancy_id"
+            f"{column}=excluded.{column}"
+            for column in columns
+            if column != "vacancy_id"
         )
         with self.connect() as connection:
             connection.execute(
@@ -276,7 +315,7 @@ class Storage:
                    r.updated_at review_updated_at
             FROM vacancies v LEFT JOIN scores s ON s.vacancy_id = v.id
             LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
-            WHERE {' AND '.join(where)}
+            WHERE {" AND ".join(where)}
             ORDER BY COALESCE(s.total_score, 0) DESC, v.published_at DESC
         """
         if limit:
@@ -315,7 +354,7 @@ class Storage:
             FROM vacancies v
             LEFT JOIN scores s ON s.vacancy_id = v.id
             LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
-            WHERE {' AND '.join(where)}
+            WHERE {" AND ".join(where)}
             ORDER BY COALESCE(r.updated_at, v.last_seen_at) DESC,
                      COALESCE(s.total_score, 0) DESC
             LIMIT ?

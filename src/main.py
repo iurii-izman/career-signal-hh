@@ -4,10 +4,8 @@ import argparse
 import importlib
 import logging
 import os
-import random
 import sqlite3
 import sys
-import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -162,14 +160,12 @@ def _print_run_estimate(
     total_queries = 0
     profile_names: list[str] = []
     query_list: list[str] = []
-    area_list: list[str] = []
     for name, config in selected.items():
         profile_names.append(name)
         queries = config.get("queries", [])
         areas = [str(a) for a in (config.get("areas") or [None])]
         total_queries += len(queries) * len(areas)
         query_list.extend(f"{name}: {q} (area={a})" for q in queries for a in areas)
-        area_list.extend(areas)
 
     max_pages = search_config["max_pages"]
     per_page = search_config["per_page"]
@@ -239,6 +235,7 @@ def _print_run_summary(
     table.add_column("Metric", style="bold")
     table.add_column("Value")
 
+    table.add_row("Mode", search_config.get("_mode_name", "normal"))
     table.add_row("Profiles processed", str(profiles_processed))
     table.add_row("Search requests made", str(client.stats_search_requests))
     table.add_row("Detail requests made", str(client.stats_detail_requests))
@@ -720,7 +717,11 @@ def command_review_next(args: argparse.Namespace) -> int:
 def command_search(args: argparse.Namespace) -> int:
     load_dotenv()
 
-    profiles = load_search_profiles()
+    try:
+        profiles = load_search_profiles()
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        console.print(f"[red]Не удалось прочитать поисковые профили: {exc}[/red]")
+        return 2
 
     # Resolve search mode and config
     search_config = _resolve_search_config(args)
@@ -778,18 +779,18 @@ def command_search(args: argparse.Namespace) -> int:
 
     # --- confirmation for deep mode ---
     if search_config.get("confirm") and not args.yes:
+        from rich.prompt import Confirm
+
         console.print(
             f"\n[yellow]This may perform up to {est_search} search API requests "
-            f"plus up to {search_config['max_detail_fetches_per_run']} detail requests. "
-            f"Continue? y/N[/yellow]"
+            f"plus up to {search_config['max_detail_fetches_per_run']} detail requests.[/yellow]"
         )
         try:
-            answer = input().strip().lower()
+            if not Confirm.ask("Continue?", default=False):
+                console.print("[yellow]Отменено.[/yellow]")
+                return 0
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Отменено.[/yellow]")
-            return 0
-        if answer not in ("y", "yes"):
-            console.print("[yellow]Отменено.[/yellow]")
             return 0
 
     # Detail refresh threshold from env
@@ -881,27 +882,36 @@ def command_search(args: argparse.Namespace) -> int:
                                             "Saving remaining vacancies without details.[/yellow]"
                                         )
                                         run_counters["skipped_by_budget"] += 1
-                                        # Save basic vacancy from search summary
-                                        vacancy = Vacancy.from_hh(summary, profile_name)
-                                        is_new = storage.upsert_vacancy(vacancy)
-                                        storage.upsert_score(
-                                            score_vacancy(vacancy, rules)
-                                        )
+                                        if storage.vacancy_exists(vacancy_id):
+                                            # Existing — just touch, don't overwrite good data
+                                            storage.touch_vacancy(vacancy_id)
+                                            counters["updated_count"] += 1
+                                        else:
+                                            # New vacancy — save basic data from search summary
+                                            vacancy = Vacancy.from_hh(
+                                                summary, profile_name
+                                            )
+                                            is_new = storage.upsert_vacancy(vacancy)
+                                            storage.upsert_score(
+                                                score_vacancy(vacancy, rules)
+                                            )
+                                            counters[
+                                                "new_count"
+                                                if is_new
+                                                else "updated_count"
+                                            ] += 1
                                         counters["loaded_count"] += 1
-                                        counters[
-                                            "new_count" if is_new else "updated_count"
-                                        ] += 1
                                         continue
 
                                     detail = client.get_vacancy(vacancy_id)
                                     vacancy = Vacancy.from_hh(detail, profile_name)
                                 else:
-                                    # Detail already exists — skip fetch, just update
+                                    # Detail already exists — skip fetch, just touch last_seen_at
                                     run_counters["skipped_existing_details"] += 1
-                                    # Update last_seen_at for the existing vacancy
-                                    now = datetime.now(timezone.utc).isoformat()
-                                    vacancy = Vacancy.from_hh(summary, profile_name)
-                                    vacancy.last_seen_at = now
+                                    storage.touch_vacancy(vacancy_id)
+                                    counters["updated_count"] += 1
+                                    counters["loaded_count"] += 1
+                                    continue
 
                                 is_new = storage.upsert_vacancy(vacancy)
                                 storage.upsert_score(score_vacancy(vacancy, rules))
