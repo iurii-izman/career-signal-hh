@@ -9,3 +9,4 @@ backups/*.sqlite
 exports/*.html
 exports/*.csv
 exports/*.jsonl
+exports/apply_packs/

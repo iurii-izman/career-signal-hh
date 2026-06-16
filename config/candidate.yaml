@@ -1,0 +1,18 @@
+candidate:
+  name_ru: "Юрий Изман"
+  name_en: "Iurii Izman"
+  location: "Tiraspol, Moldova"
+  availability: "remote / hybrid / Chisinau / international"
+  links:
+    github: "https://github.com/iurii-izman"
+    linkedin: "https://linkedin.com/in/iurii-izman"
+  profiles:
+    ai:
+      summary_ru: "AI Automation & Systems Integration Engineer с опытом построения RAG-пайплайнов, API-интеграций и n8n-автоматизаций."
+      summary_en: "AI Automation & Systems Integration Engineer with experience building RAG pipelines, API integrations, and n8n automation."
+    bitrix:
+      summary_ru: "Ведущий аналитик / архитектор CRM-решений с опытом внедрения Битрикс24, 1С-интеграций и автоматизации бизнес-процессов."
+      summary_en: "Lead analyst / CRM solutions architect with experience in Bitrix24 implementation, 1C integrations, and business process automation."
+    default:
+      summary_ru: "Специалист по автоматизации и системной интеграции."
+      summary_en: "Automation and systems integration specialist."

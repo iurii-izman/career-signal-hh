@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from .commands.apply_pack import command_apply_pack
 from .commands.auth import command_auth_check
 from .commands.db import command_db_backup, command_db_info, command_db_purge_samples
 from .commands.doctor import command_doctor
@@ -101,6 +102,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip confirmation prompts (e.g. for deep mode).",
     )
     search.set_defaults(func=command_search)
+
+    # --- apply-pack ---
+    apply_pack = sub.add_parser("apply-pack")
+    apply_pack.add_argument("vacancy_id", nargs="?", help="Vacancy ID.")
+    apply_pack.add_argument(
+        "--top", type=int, help="Generate packs for top N vacancies."
+    )
+    apply_pack.add_argument("--limit", type=int, help="Alias for --top.")
+    apply_pack.add_argument("--decision", help="Filter by decision label.")
+    apply_pack.add_argument("--preset", help="Filter by preset name.")
+    apply_pack.add_argument("--min-score", type=int, default=0)
+    apply_pack.add_argument("--lang", choices=["ru", "en"], default="ru")
+    apply_pack.add_argument("--format", choices=["md", "html", "both"], default="both")
+    apply_pack.add_argument(
+        "--save-review", action="store_true", help="Save cover letter draft to review."
+    )
+    apply_pack.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing draft."
+    )
+    apply_pack.set_defaults(func=command_apply_pack)
 
     # --- score ---
     score_parser = sub.add_parser("score")

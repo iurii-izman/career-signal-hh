@@ -334,6 +334,31 @@ python -c "from src.hh_client import HHClient; import os, json; from dotenv impo
 Параметры `schedule` и `experience` отправляются как повторяющиеся query
 parameters. Их допустимые значения следует сверять с `GET /dictionaries`.
 
+## Apply Pack: подготовка к ручному отклику
+
+Генерирует Markdown и HTML файлы с полным разбором вакансии,
+fit analysis, рисками, чеклистом и черновиком cover letter.
+**Не отправляет отклики.** Только готовит материалы.
+
+```powershell
+# Для одной вакансии
+python -m src.main apply-pack 123456789
+python -m src.main apply-pack 123456789 --lang en
+
+# Для топ-10 strong_match вакансий
+python -m src.main apply-pack --top 10 --decision strong_match
+python -m src.main apply-pack --preset ai_rag_remote --limit 5
+
+# С сохранением черновика в review
+python -m src.main apply-pack 123456789 --save-review
+```
+
+Файлы создаются в `exports/apply_packs/<id>_<slug>.md` и `.html`.
+При `--top`/`--limit` дополнительно создаётся `index.html`.
+
+Требуется `config/candidate.yaml` с именем, локацией, ссылками
+и профильными summary. Без него используются безопасные defaults.
+
 ## Daily review queue
 
 Удобная очередь для ручного отбора лучших кандидатов.
