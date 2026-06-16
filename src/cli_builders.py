@@ -22,6 +22,7 @@ from .commands import (
     quality,
     review,
     sample,
+    scheduler,
     score,
     search,
     stats,
@@ -289,6 +290,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_calibrate_parser(sub)
     build_quality_parser(sub)
     build_cockpit_parser(sub)
+    build_scheduler_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -331,3 +333,12 @@ def build_cockpit_parser(sub: argparse._SubParsersAction) -> None:
     ps = p.add_subparsers(dest="cockpit_command", required=True)
     ps.add_parser("export").set_defaults(func=cockpit.command_cockpit_export)
     ps.add_parser("open").set_defaults(func=cockpit.command_cockpit_open)
+
+
+def build_scheduler_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("scheduler")
+    ps = p.add_subparsers(dest="scheduler_command", required=True)
+    ps.add_parser("print-windows-task").set_defaults(
+        func=scheduler.command_scheduler_print_windows_task
+    )
+    ps.add_parser("status").set_defaults(func=scheduler.command_scheduler_status)
