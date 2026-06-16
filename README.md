@@ -236,7 +236,9 @@ python -m src.main export --min-score 35 --profile ai_automation --days 14
 - `exports/vacancies_report.html` — автономный тёмный отчёт с фильтрами;
 - `exports/vacancies.csv` — таблица для ручного трекера;
 - `exports/vacancies.jsonl` — нормализованные данные и scoring;
-- `data/vacancies.sqlite` — локальная база.
+- `data/vacancies.sqlite` — рабочая база;
+- `data/sample_vacancies.sqlite` — база для sample-export;
+- `backups/vacancies_YYYYMMDD_HHMMSS.sqlite` — бэкапы.
 
 ## Поисковые профили
 
@@ -276,13 +278,83 @@ parameters. Их допустимые значения следует сверя
 
 ## Устройство проекта
 
+```
+src/
+  main.py              → тонкий entrypoint (5 строк)
+  cli.py               → build_parser() + main()
+  config.py            → SEARCH_MODES, _services(), _short_body()
+  hh_client.py         → публичный HTTP API, budget, rate limiting
+  storage.py           → SQLite, upsert, touch, detail_needed
+  models.py            → Vacancy, ScoreResult (pydantic)
+  scoring.py           → rule-based scoring
+  search_profiles.py   → загрузка YAML-конфигов
+  utils.py             → html_to_text, normalize, salary_to_str
+  exporter_csv.py      → CSV + JSONL экспорт
+  exporter_html.py     → автономный HTML-отчёт
+  commands/
+    auth.py            → auth-check
+    db.py              → db info, backup, purge-samples
+    doctor.py          → doctor
+    export.py          → export
+    profiles.py        → profiles
+    review.py          → review list/set/note/apply/next
+    sample.py          → sample-export
+    search.py          → search (с search-loop)
+    stats.py           → top, stats
+  services/
+    search_runner.py   → print_run_estimate, print_run_summary
+    search_modes.py    → реэкспорт SEARCH_MODES
+```
+
 `src/hh_client.py` отвечает только за публичный HTTP API, `src/storage.py` —
 за SQLite и idempotent upsert, `src/scoring.py` — за правила, а экспортеры не
 зависят от сети. `first_seen_at` при обновлении не перезаписывается; подробности
 и score пересчитываются.
 
 Одна ошибка запроса или вакансии записывается в `search_runs` и не останавливает
-весь запуск. При HTTP 429 клиент делает до двух повторов с backoff.
+весь запуск.
+
+## Данные: sample vs production
+
+`sample-export` по умолчанию пишет в **отдельную базу** `data/sample_vacancies.sqlite`
+и не загрязняет рабочую `data/vacancies.sqlite`.
+
+```powershell
+# По умолчанию → data/sample_vacancies.sqlite
+python -m src.main sample-export
+
+# Кастомный путь
+python -m src.main sample-export --db data/custom_sample.sqlite
+```
+
+Если sample-вакансии ранее попали в рабочую базу, их можно удалить:
+
+```powershell
+python -m src.main db info              # проверить наличие sample-*
+python -m src.main db purge-samples -y  # удалить без подтверждения
+```
+
+## Обслуживание базы данных
+
+```powershell
+# Информация о базе
+python -m src.main db info
+
+# Бэкап SQLite
+python -m src.main db backup
+# → backups/vacancies_YYYYMMDD_HHMMSS.sqlite
+
+# Удаление sample-вакансий из рабочей базы
+python -m src.main db purge-samples
+```
+
+Рекомендуемый maintenance:
+
+```powershell
+python -m src.main db info
+python -m src.main db backup
+python -m src.main db purge-samples
+```
 
 ## Тесты
 
