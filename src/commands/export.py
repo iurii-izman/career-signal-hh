@@ -13,7 +13,9 @@ console = Console()
 
 def command_export(args: argparse.Namespace) -> int:
     storage, _, _ = _services()
-    rows = storage.list_vacancies(args.min_score, args.profile, args.days)
+    # --preset is an alias for --profile
+    profile = args.preset or args.profile
+    rows = storage.list_vacancies(args.min_score, profile, args.days)
     export_html(rows, "exports/vacancies_report.html")
     export_csv(rows, "exports/vacancies.csv")
     export_jsonl(rows, "exports/vacancies.jsonl")

@@ -20,6 +20,8 @@ from ..hh_client import (
 )
 from ..models import Vacancy
 from ..scoring import score_vacancy
+from ..scoring_v2 import score_by_preset
+from ..search_presets import create_adhoc_preset, get_preset, list_presets
 from ..search_profiles import load_search_profiles
 from ..services.search_runner import print_run_estimate, print_run_summary
 
@@ -27,75 +29,190 @@ console = Console()
 
 
 def _resolve_search_config(args: argparse.Namespace) -> dict[str, Any]:
-    """Merge mode defaults with explicit CLI overrides."""
     mode = args.mode or "normal"
     if mode not in SEARCH_MODES:
         console.print(
             f"[yellow]Неизвестный режим {mode!r}, используется normal.[/yellow]"
         )
         mode = "normal"
-    preset = SEARCH_MODES[mode].copy()
-
+    cfg = SEARCH_MODES[mode].copy()
     if args.max_pages is not None:
-        preset["max_pages"] = args.max_pages
+        cfg["max_pages"] = args.max_pages
     if args.per_page is not None:
-        preset["per_page"] = args.per_page
+        cfg["per_page"] = args.per_page
+    return cfg
 
-    return preset
+
+def _build_preset_search_units(preset: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert a preset into search units compatible with the search loop."""
+    search_terms = preset.get("search_terms", [])
+    areas = preset.get("areas", [])
+    schedule = preset.get("schedule", [])
+    experience = preset.get("experience", [])
+
+    if not areas:
+        areas = [None]  # None = no area restriction
+    if not isinstance(areas, list):
+        areas = [areas]
+
+    params: dict[str, Any] = {}
+    if schedule:
+        params["schedule"] = schedule
+    if experience:
+        params["experience"] = experience
+
+    source = preset["_name"]
+
+    units = []
+    for term in search_terms:
+        for area in areas:
+            units.append(
+                {
+                    "query": term,
+                    "area": area,
+                    "params": params,
+                    "source": source,
+                }
+            )
+    return units
+
+
+def _build_legacy_search_units(selected: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert legacy profiles into search units."""
+    units = []
+    for profile_name, config in selected.items():
+        for query in config.get("queries", []):
+            for area in config.get("areas", [None]):
+                units.append(
+                    {
+                        "query": query,
+                        "area": area,
+                        "params": config.get("params"),
+                        "source": profile_name,
+                    }
+                )
+    return units
+
+
+def _build_estimate_selected(search_units: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a 'selected' dict compatible with print_run_estimate."""
+    by_source: dict[str, dict[str, Any]] = {}
+    for unit in search_units:
+        src = unit["source"]
+        if src not in by_source:
+            by_source[src] = {"queries": [], "areas": [], "params": unit.get("params")}
+        by_source[src]["queries"].append(unit["query"])
+        by_source[src]["areas"].append(unit["area"])
+    # Deduplicate
+    for src in by_source:
+        by_source[src]["queries"] = list(dict.fromkeys(by_source[src]["queries"]))
+        by_source[src]["areas"] = list(dict.fromkeys(by_source[src]["areas"]))
+    return by_source
 
 
 def command_search(args: argparse.Namespace) -> int:
-    try:
-        profiles = load_search_profiles()
-    except (OSError, ValueError, yaml.YAMLError) as exc:
-        console.print(f"[red]Не удалось прочитать поисковые профили: {exc}[/red]")
-        return 2
-
     search_config = _resolve_search_config(args)
     search_config["_mode_name"] = args.mode or "normal"
     search_config["_force_details"] = args.force_details
     verbose = args.verbose
 
-    if args.profile:
-        selected = {args.profile: profiles.get(args.profile)}
-    elif search_config.get("single_profile"):
-        first_enabled = next(
-            (n for n, c in profiles.items() if c and c.get("enabled", True)),
-            None,
+    # Determine search mode: adhoc > preset > profile > presets (default) > legacy fallback
+    use_preset_scoring = False
+    active_preset: dict[str, Any] | None = None
+    search_units: list[dict[str, Any]] = []
+    rules = None  # legacy scoring rules
+
+    if args.adhoc:
+        include_list = [k.strip() for k in (args.include or "").split(",") if k.strip()]
+        exclude_list = [k.strip() for k in (args.exclude or "").split(",") if k.strip()]
+        if not include_list:
+            console.print(
+                "[red]--adhoc requires --include with at least one keyword.[/red]"
+            )
+            return 2
+        remote_only = args.remote_only if args.remote_only is not None else True
+        active_preset = create_adhoc_preset(
+            include_list, exclude_list, remote_only=remote_only
         )
-        if first_enabled:
-            selected = {first_enabled: profiles[first_enabled]}
-        else:
-            selected = {}
+        use_preset_scoring = True
+        search_units = _build_preset_search_units(active_preset)
+        search_config["_mode_name"] = f"adhoc ({active_preset['_name']})"
+
+    elif args.preset:
+        active_preset = get_preset(args.preset)
+        if active_preset is None:
+            console.print(f"[red]Preset '{args.preset}' not found.[/red]")
+            return 2
+        use_preset_scoring = True
+        search_units = _build_preset_search_units(active_preset)
+
+    elif args.profile:
+        # Legacy profile mode
+        try:
+            profiles = load_search_profiles()
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            console.print(f"[red]Не удалось прочитать поисковые профили: {exc}[/red]")
+            return 2
+        selected = {args.profile: profiles.get(args.profile)}
+        selected = {n: v for n, v in selected.items() if v and v.get("enabled", True)}
+        if not selected:
+            console.print(f"[red]Profile '{args.profile}' not found or disabled.[/red]")
+            return 2
+        search_units = _build_legacy_search_units(selected)
+
     else:
-        selected = profiles
+        # Default: try presets first, fallback to legacy profiles
+        presets = list_presets()
+        if presets:
+            use_preset_scoring = True
+            for p in presets:
+                search_units.extend(_build_preset_search_units(p))
+        else:
+            try:
+                profiles = load_search_profiles()
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                console.print(
+                    f"[red]Не удалось прочитать поисковые профили: {exc}[/red]"
+                )
+                return 2
+            profiles = {
+                n: v for n, v in profiles.items() if v and v.get("enabled", True)
+            }
+            if not profiles:
+                console.print("[red]Нет enabled profiles или presets.[/red]")
+                return 2
+            # Legacy single_profile support for smoke mode
+            if search_config.get("single_profile"):
+                first = next(iter(profiles.items()))
+                profiles = {first[0]: first[1]}
+            search_units = _build_legacy_search_units(profiles)
 
-    selected = {
-        name: value
-        for name, value in selected.items()
-        if value and value.get("enabled", True)
-    }
-
-    if not selected:
-        console.print("[red]Подходящие профили не найдены.[/red]")
+    if not search_units:
+        console.print("[red]Нет search units для выполнения.[/red]")
         return 2
 
+    # Dry-run
     if args.dry_run:
         client = HHClient()
-        print_run_estimate(selected, search_config, client)
+        estimate_selected = _build_estimate_selected(search_units)
+        print_run_estimate(estimate_selected, search_config, client)
         console.print(
             "\n[bold green]Dry-run complete. No API requests were made.[/bold green]"
         )
         return 0
 
-    storage, client, rules = _services()
+    # Real run
+    storage, client, _rules = _services()
+    if rules is None:
+        rules = _rules  # fallback scoring rules if needed
 
     client.set_budget(
         max_requests=search_config["max_requests_per_run"],
         max_details=search_config["max_detail_fetches_per_run"],
     )
 
-    est_search = print_run_estimate(selected, search_config, client)
+    estimate_selected = _build_estimate_selected(search_units)
+    est_search = print_run_estimate(estimate_selected, search_config, client)
 
     if search_config.get("confirm") and not args.yes:
         console.print(
@@ -131,183 +248,184 @@ def command_search(args: argparse.Namespace) -> int:
     exit_code = 0
     stop_all = False
 
-    for profile_name, config in selected.items():
+    for unit in search_units:
         if stop_all:
             break
         profiles_processed += 1
-        for query in config.get("queries", []):
-            if stop_all:
-                break
-            for area in config.get("areas", [None]):
-                if stop_all:
+        query = unit["query"]
+        area = unit["area"]
+        profile_name = unit["source"]
+        params = unit.get("params")
+
+        started = datetime.now(timezone.utc).isoformat()
+        counters = {
+            "found_count": 0,
+            "loaded_count": 0,
+            "new_count": 0,
+            "updated_count": 0,
+        }
+        error: str | None = None
+
+        try:
+            for page in range(max_pages):
+                if not client.can_request("search"):
+                    console.print(
+                        "[yellow]Request budget reached. Partial results were saved.[/yellow]"
+                    )
+                    run_counters["skipped_by_budget"] += 1
+                    stop_all = True
                     break
-                started = datetime.now(timezone.utc).isoformat()
-                counters = {
-                    "found_count": 0,
-                    "loaded_count": 0,
-                    "new_count": 0,
-                    "updated_count": 0,
-                }
-                error: str | None = None
 
                 try:
-                    for page in range(max_pages):
-                        if not client.can_request("search"):
-                            console.print(
-                                "[yellow]Request budget reached. "
-                                "Partial results were saved.[/yellow]"
-                            )
-                            run_counters["skipped_by_budget"] += 1
-                            stop_all = True
-                            break
+                    result = client.search_vacancies(
+                        query, area, page, per_page, params
+                    )
+                except HHBudgetExceeded:
+                    console.print(
+                        "[yellow]Request budget reached. Partial results were saved.[/yellow]"
+                    )
+                    run_counters["skipped_by_budget"] += 1
+                    stop_all = True
+                    break
 
-                        try:
-                            result = client.search_vacancies(
-                                query, area, page, per_page, config.get("params")
-                            )
-                        except HHBudgetExceeded:
-                            console.print(
-                                "[yellow]Request budget reached. "
-                                "Partial results were saved.[/yellow]"
-                            )
-                            run_counters["skipped_by_budget"] += 1
-                            stop_all = True
-                            break
+                items = result.get("items") or []
+                counters["found_count"] += len(items)
+                if verbose:
+                    console.print(f"  page {page + 1}: {len(items)} items")
 
-                        items = result.get("items") or []
-                        counters["found_count"] += len(items)
-                        if verbose:
-                            console.print(f"  page {page + 1}: {len(items)} items")
+                for summary in items:
+                    vacancy_id = str(summary.get("id", ""))
+                    if not vacancy_id or vacancy_id in seen_this_run:
+                        continue
+                    seen_this_run.add(vacancy_id)
 
-                        for summary in items:
-                            vacancy_id = str(summary.get("id", ""))
-                            if not vacancy_id or vacancy_id in seen_this_run:
-                                continue
-                            seen_this_run.add(vacancy_id)
-
-                            try:
-                                if storage.detail_needed(
-                                    vacancy_id,
-                                    force=force_details,
-                                    refresh_days=detail_refresh_days,
-                                ):
-                                    if not client.can_request("detail"):
-                                        if not run_counters["skipped_by_budget"]:
-                                            console.print(
-                                                "[yellow]Detail request budget reached. "
-                                                "Saving remaining vacancies without details.[/yellow]"
-                                            )
-                                        run_counters["skipped_by_budget"] += 1
-                                        if storage.vacancy_exists(vacancy_id):
-                                            storage.touch_vacancy(vacancy_id)
-                                            counters["updated_count"] += 1
-                                        else:
-                                            vacancy = Vacancy.from_hh(
-                                                summary, profile_name
-                                            )
-                                            is_new = storage.upsert_vacancy(vacancy)
-                                            storage.upsert_score(
-                                                score_vacancy(vacancy, rules)
-                                            )
-                                            counters[
-                                                "new_count"
-                                                if is_new
-                                                else "updated_count"
-                                            ] += 1
-                                        counters["loaded_count"] += 1
-                                        continue
-
-                                    detail = client.get_vacancy(vacancy_id)
-                                    vacancy = Vacancy.from_hh(detail, profile_name)
-                                    if verbose:
-                                        console.print(
-                                            f"    detail: {vacancy.name[:60]}"
-                                        )
-                                else:
-                                    run_counters["skipped_existing_details"] += 1
+                    try:
+                        if storage.detail_needed(
+                            vacancy_id,
+                            force=force_details,
+                            refresh_days=detail_refresh_days,
+                        ):
+                            if not client.can_request("detail"):
+                                if not run_counters["skipped_by_budget"]:
+                                    console.print(
+                                        "[yellow]Detail request budget reached. Saving remaining vacancies without details.[/yellow]"
+                                    )
+                                run_counters["skipped_by_budget"] += 1
+                                if storage.vacancy_exists(vacancy_id):
                                     storage.touch_vacancy(vacancy_id)
                                     counters["updated_count"] += 1
-                                    counters["loaded_count"] += 1
-                                    if verbose:
-                                        console.print(
-                                            f"    skip: {summary.get('name', '')[:60]}"
-                                        )
-                                    continue
-
-                                is_new = storage.upsert_vacancy(vacancy)
-                                storage.upsert_score(score_vacancy(vacancy, rules))
+                                else:
+                                    vacancy = Vacancy.from_hh(summary, profile_name)
+                                    is_new = storage.upsert_vacancy(vacancy)
+                                    _score_and_store(
+                                        storage,
+                                        vacancy,
+                                        rules,
+                                        active_preset,
+                                        use_preset_scoring,
+                                    )
+                                    counters[
+                                        "new_count" if is_new else "updated_count"
+                                    ] += 1
                                 counters["loaded_count"] += 1
-                                counters[
-                                    "new_count" if is_new else "updated_count"
-                                ] += 1
+                                continue
 
-                            except HHBudgetExceeded:
+                            detail = client.get_vacancy(vacancy_id)
+                            vacancy = Vacancy.from_hh(detail, profile_name)
+                            if verbose:
+                                console.print(f"    detail: {vacancy.name[:60]}")
+                        else:
+                            run_counters["skipped_existing_details"] += 1
+                            storage.touch_vacancy(vacancy_id)
+                            counters["updated_count"] += 1
+                            counters["loaded_count"] += 1
+                            if verbose:
                                 console.print(
-                                    "[yellow]Request budget reached. "
-                                    "Partial results were saved.[/yellow]"
+                                    f"    skip: {summary.get('name', '')[:60]}"
                                 )
-                                run_counters["skipped_by_budget"] += 1
-                                stop_all = True
-                                break
-                            except (HHAPIError, ValueError) as exc:
-                                logging.warning(
-                                    "Вакансия %s пропущена: %s", vacancy_id, exc
-                                )
+                            continue
 
-                        if page + 1 >= int(result.get("pages", 0)) or not items:
-                            break
-
-                except HHConfigurationError as exc:
-                    error = str(exc)
-                    logging.error("%s", exc)
-                    console.print(f"[red]Поиск остановлен: {exc}[/red]")
-                    exit_code = 2
-                    stop_all = True
-                except HHAuthorizationRequired as exc:
-                    error = str(exc)
-                    logging.error("%s", exc)
-                    console.print(
-                        "[yellow]Поиск остановлен: HH API сейчас требует "
-                        "авторизацию приложения для доступа к вакансиям.[/yellow]"
-                    )
-                    exit_code = 3
-                    stop_all = True
-                except NotImplementedError as exc:
-                    logging.error("%s", exc)
-                    console.print(f"[red]Поиск остановлен: {exc}[/red]")
-                    exit_code = 4
-                    stop_all = True
-                except HHAPIError as exc:
-                    error = str(exc)
-                    logging.error("%s / %s / %s: %s", profile_name, query, area, exc)
-                    if "429" in str(exc) or "rate limit" in str(exc).lower():
-                        console.print(
-                            "[yellow]Search stopped due to HH API rate limit (429). "
-                            "Partial results were saved.[/yellow]"
+                        is_new = storage.upsert_vacancy(vacancy)
+                        _score_and_store(
+                            storage, vacancy, rules, active_preset, use_preset_scoring
                         )
+                        counters["loaded_count"] += 1
+                        counters["new_count" if is_new else "updated_count"] += 1
+
+                    except HHBudgetExceeded:
+                        console.print(
+                            "[yellow]Request budget reached. Partial results were saved.[/yellow]"
+                        )
+                        run_counters["skipped_by_budget"] += 1
                         stop_all = True
+                        break
+                    except (HHAPIError, ValueError) as exc:
+                        logging.warning("Вакансия %s пропущена: %s", vacancy_id, exc)
 
-                for key in ("new_count", "updated_count"):
-                    run_counters[key] += counters[key]
+                if page + 1 >= int(result.get("pages", 0)) or not items:
+                    break
 
-                storage.add_search_run(
-                    {
-                        "started_at": started,
-                        "finished_at": datetime.now(timezone.utc).isoformat(),
-                        "profile_name": profile_name,
-                        "query": query,
-                        "area_id": str(area) if area is not None else None,
-                        **counters,
-                        "error": error,
-                    }
-                )
+        except HHConfigurationError as exc:
+            error = str(exc)
+            logging.error("%s", exc)
+            console.print(f"[red]Поиск остановлен: {exc}[/red]")
+            exit_code = 2
+            stop_all = True
+        except HHAuthorizationRequired as exc:
+            error = str(exc)
+            logging.error("%s", exc)
+            console.print(
+                "[yellow]Поиск остановлен: HH API сейчас требует авторизацию приложения для доступа к вакансиям.[/yellow]"
+            )
+            exit_code = 3
+            stop_all = True
+        except NotImplementedError as exc:
+            logging.error("%s", exc)
+            console.print(f"[red]Поиск остановлен: {exc}[/red]")
+            exit_code = 4
+            stop_all = True
+        except HHAPIError as exc:
+            error = str(exc)
+            logging.error("%s / %s / %s: %s", profile_name, query, area, exc)
+            if "429" in str(exc) or "rate limit" in str(exc).lower():
                 console.print(
-                    f"{profile_name}: {query} / {area}: "
-                    f"{counters['loaded_count']} загружено"
+                    "[yellow]Search stopped due to HH API rate limit (429). Partial results were saved.[/yellow]"
                 )
+                stop_all = True
+
+        for key in ("new_count", "updated_count"):
+            run_counters[key] += counters[key]
+
+        storage.add_search_run(
+            {
+                "started_at": started,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "profile_name": profile_name,
+                "query": query,
+                "area_id": str(area) if area is not None else None,
+                **counters,
+                "error": error,
+            }
+        )
+        console.print(
+            f"{profile_name}: {query} / {area}: {counters['loaded_count']} загружено"
+        )
 
     print_run_summary(
         run_started, search_config, client, profiles_processed, run_counters
     )
-
     return exit_code
+
+
+def _score_and_store(
+    storage,
+    vacancy: Vacancy,
+    rules: dict[str, Any] | None,
+    preset: dict[str, Any] | None,
+    use_preset: bool,
+) -> None:
+    """Score vacancy using preset or legacy rules and store the result."""
+    if use_preset and preset:
+        storage.upsert_score(score_by_preset(vacancy, preset))
+    elif rules:
+        storage.upsert_score(score_vacancy(vacancy, rules))

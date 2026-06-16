@@ -6,6 +6,7 @@ from .commands.auth import command_auth_check
 from .commands.db import command_db_backup, command_db_info, command_db_purge_samples
 from .commands.doctor import command_doctor
 from .commands.export import command_export
+from .commands.presets import command_presets_list, command_presets_show
 from .commands.profiles import command_profiles
 from .commands.review import (
     command_review_apply,
@@ -45,7 +46,33 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override per-page for the selected mode.",
     )
-    search.add_argument("--profile", help="Limit search to a single profile.")
+    search.add_argument(
+        "--profile", help="Use legacy search profile (from search_profiles.yaml)."
+    )
+    search.add_argument(
+        "--preset", help="Use universal search preset (from search_presets.yaml)."
+    )
+    search.add_argument(
+        "--adhoc",
+        action="store_true",
+        help="Create a temporary ad-hoc preset from --include/--exclude.",
+    )
+    search.add_argument(
+        "--include",
+        default=None,
+        help="Comma-separated include keywords (for adhoc mode).",
+    )
+    search.add_argument(
+        "--exclude",
+        default=None,
+        help="Comma-separated exclude keywords (for adhoc mode).",
+    )
+    search.add_argument(
+        "--remote-only",
+        action="store_true",
+        default=None,
+        help="Restrict to remote vacancies (default true for adhoc).",
+    )
     search.add_argument(
         "--dry-run", action="store_true", help="Show estimate without API calls."
     )
@@ -68,10 +95,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     search.set_defaults(func=command_search)
 
+    # --- presets ---
+    presets_parser = sub.add_parser("presets")
+    presets_sub = presets_parser.add_subparsers(dest="presets_command", required=True)
+    presets_list = presets_sub.add_parser("list")
+    presets_list.set_defaults(func=command_presets_list)
+    presets_show = presets_sub.add_parser("show")
+    presets_show.add_argument("preset_name", help="Preset name to show.")
+    presets_show.set_defaults(func=command_presets_show)
+
     # --- export ---
     export = sub.add_parser("export")
     export.add_argument("--min-score", type=int, default=0)
-    export.add_argument("--profile", choices=["ai_automation", "bitrix_1c"])
+    export.add_argument(
+        "--profile", default=None, help="Filter by legacy profile name."
+    )
+    export.add_argument(
+        "--preset", default=None, help="Filter by preset name (alias for --profile)."
+    )
     export.add_argument("--days", type=int)
     export.set_defaults(func=command_export)
 
@@ -102,14 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
     # --- db ---
     db_parser = sub.add_parser("db")
     db_sub = db_parser.add_subparsers(dest="db_command", required=True)
-
     db_info = db_sub.add_parser("info")
     db_info.set_defaults(func=command_db_info)
-
     db_purge = db_sub.add_parser("purge-samples")
     db_purge.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
     db_purge.set_defaults(func=command_db_purge_samples)
-
     db_backup = db_sub.add_parser("backup")
     db_backup.set_defaults(func=command_db_backup)
 
@@ -120,7 +158,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_list.add_argument("--status", choices=sorted(REVIEW_STATUSES))
     review_list.add_argument("--min-score", type=int, default=0)
     review_list.add_argument("--limit", type=int, default=30)
-    review_list.add_argument("--profile", choices=["ai_automation", "bitrix_1c"])
+    review_list.add_argument(
+        "--profile", default=None, help="Filter by legacy profile name."
+    )
+    review_list.add_argument(
+        "--preset", default=None, help="Filter by preset name (alias for --profile)."
+    )
     review_list.set_defaults(func=command_review_list)
     review_set = review_sub.add_parser("set")
     review_set.add_argument("vacancy_id")

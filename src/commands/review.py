@@ -33,11 +33,12 @@ def _normalize_review_date(value: str) -> str:
 def command_review_list(args: argparse.Namespace) -> int:
     storage = _review_storage()
     try:
+        profile = args.preset or args.profile
         rows = storage.list_reviewed_vacancies(
             status=args.status,
             min_score=args.min_score,
             limit=args.limit,
-            profile=args.profile,
+            profile=profile,
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")

@@ -173,6 +173,72 @@ python -m src.main search --dry-run
 
 ### Рекомендации по безопасному использованию
 
+## Universal Search Presets
+
+CareerSignal HH поддерживает универсальные поисковые пресеты через
+`config/search_presets.yaml`. Пресеты заменяют старые жёстко заданные профили
+(`ai_automation`, `bitrix_1c`) и позволяют создавать произвольные поиски
+без редактирования кода.
+
+### Отличия от legacy profiles
+
+| Характеристика | Legacy profiles | Universal presets |
+|---------------|----------------|-------------------|
+| Конфиг | `config/search_profiles.yaml` + `scoring_rules.yaml` | `config/search_presets.yaml` |
+| Страны | Заданы явно (area IDs) | `areas: []` = все страны |
+| Remote | Опционально | По умолчанию `remote_only: true` |
+| Scoring | Ключевые слова с весами | include/exclude/boost/penalties |
+| Ad-hoc | Нет | `--adhoc --include "..." --exclude "..."` |
+| Исключения | Хардкод в scoring_rules | Пользователь задаёт в YAML или CLI |
+
+### Просмотр пресетов
+
+```powershell
+python -m src.main presets list
+python -m src.main presets show ai_rag_remote
+```
+
+### Поиск по пресету
+
+```powershell
+python -m src.main search --preset ai_rag_remote --mode smoke
+python -m src.main search --preset bitrix24_crm_remote --mode normal
+```
+
+### Ad-hoc поиск
+
+```powershell
+python -m src.main search --adhoc \
+  --include "RAG,LLM,Python" \
+  --exclude "QA,casino,onsite only" \
+  --remote-only \
+  --mode smoke
+```
+
+Ad-hoc создаёт временный пресет: include-ключевые слова становятся
+поисковыми запросами и критериями include.any. exclude-ключевые слова
+становятся exclude.any.
+
+### По умолчанию
+
+- `areas: []` означает **без ограничения страны** (area не отправляется в HH API).
+- `remote_only: true` по умолчанию — ищутся только remote-вакансии.
+- Исключения задаёт **пользователь**, а не код.
+- Все страны и языки имеют равный приоритет.
+- Зарплата даёт бонус к score, но не является обязательным фильтром.
+
+### Legacy-профили продолжают работать
+
+```powershell
+python -m src.main search --profile ai_automation
+python -m src.main profiles
+```
+
+Если `search_presets.yaml` отсутствует, поиск автоматически переключается
+на старые профили из `search_profiles.yaml`.
+
+### Рекомендации по безопасному использованию
+
 **First real run:**
 
 ```powershell

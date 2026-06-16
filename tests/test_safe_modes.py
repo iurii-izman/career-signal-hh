@@ -128,6 +128,11 @@ def test_mode_overrides() -> None:
         force_details=False,
         verbose=False,
         yes=False,
+        adhoc=False,
+        preset=None,
+        include=None,
+        exclude=None,
+        remote_only=None,
     )
     config = search_cmds._resolve_search_config(args)
     assert config["max_pages"] == 5  # overridden
@@ -334,6 +339,11 @@ def test_dry_run_does_not_make_api_calls(
             force_details=False,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
@@ -362,6 +372,11 @@ def test_dry_run_smoke_shows_estimate(
             force_details=False,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
@@ -431,6 +446,11 @@ def test_smoke_mode_selects_single_enabled_profile(
             force_details=False,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
@@ -534,6 +554,11 @@ def test_budget_stops_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             force_details=False,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
@@ -578,6 +603,11 @@ def test_429_stops_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             force_details=False,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
@@ -621,6 +651,11 @@ def test_force_details_does_not_ignore_budget(
             force_details=True,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
@@ -707,6 +742,11 @@ def test_skip_detail_preserves_description(
             force_details=False,
             verbose=False,
             yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
         )
     )
 
