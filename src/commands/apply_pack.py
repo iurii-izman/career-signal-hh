@@ -85,7 +85,7 @@ def _generate_md(
         else json_loads(vacancy.get("risk_flags_json"), [])
     )
 
-    salary = _fmt_salary(vacancy)
+    salary = _fmt_salary(vacancy, lang)
     schedule = vacancy.get("schedule_name") or ""
     experience = vacancy.get("experience_name") or ""
     published = (vacancy.get("published_at") or "")[:10]
@@ -105,7 +105,10 @@ def _generate_md(
         checklist_header = "## Чеклист ручного отклика"
         cover_header = "## Черновик cover letter"
         closing = "С уважением,"
-        top_areas = _top_matched_areas(matched)
+        lang_intro_text = "Меня зовут"
+        lang_at_text = "в"
+        lang_experience_text = "так как мой опыт связан с"
+        top_areas = _top_matched_areas(matched, lang)
         fit_bullets = _fit_bullets(matched, desc, lang)
         risk_bullets = _risk_bullets(excluded, risks, vacancy, lang)
     else:
@@ -115,7 +118,10 @@ def _generate_md(
         checklist_header = "## Manual application checklist"
         cover_header = "## Cover letter draft"
         closing = "Best regards,"
-        top_areas = _top_matched_areas(matched)
+        lang_intro_text = "My name is"
+        lang_at_text = "at"
+        lang_experience_text = "as my experience aligns with"
+        top_areas = _top_matched_areas(matched, lang)
         fit_bullets = _fit_bullets(matched, desc, lang)
         risk_bullets = _risk_bullets(excluded, risks, vacancy, lang)
 
@@ -157,7 +163,7 @@ def _generate_md(
 
 {greeting}
 
-Меня зовут {candidate_name}. Заинтересовала вакансия **{name}** в **{company}**, так как мой опыт связан с {top_areas}.
+{candidate_name}. {lang_intro_text} **{name}** {lang_at_text} **{company}**, {lang_experience_text} {top_areas}.
 
 {summary}
 
@@ -168,9 +174,13 @@ def _generate_md(
 """
 
 
-def _top_matched_areas(matched: list[dict]) -> str:
+def _top_matched_areas(matched: list[dict], lang: str) -> str:
+    if lang == "ru":
+        default = "релевантными технологиями"
+    else:
+        default = "relevant technologies"
     if not matched:
-        return "релевантными технологиями"
+        return default
     areas = list(dict.fromkeys(kw.get("keyword", "") for kw in matched[:5]))
     return ", ".join(areas)
 
@@ -225,12 +235,12 @@ def _risk_bullets(
     return "\n".join(lines)
 
 
-def _fmt_salary(vacancy: dict) -> str:
+def _fmt_salary(vacancy: dict, lang: str = "ru") -> str:
     sfrom = vacancy.get("salary_from")
     sto = vacancy.get("salary_to")
     curr = vacancy.get("salary_currency") or ""
     if not sfrom and not sto:
-        return "Не указана" if True else "Not specified"
+        return "Не указана" if lang == "ru" else "Not specified"
     parts = []
     if sfrom:
         parts.append(str(sfrom))
