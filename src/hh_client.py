@@ -82,6 +82,7 @@ class HHClient:
         self.stats_search_requests: int = 0
         self.stats_detail_requests: int = 0
         self.stats_dict_requests: int = 0
+        self.stats_attempted_requests: int = 0
 
     def _validate_auth(self) -> None:
         if self.auth_mode == "application_token" and not self.app_access_token:
@@ -133,6 +134,7 @@ class HHClient:
         self.stats_search_requests = 0
         self.stats_detail_requests = 0
         self.stats_dict_requests = 0
+        self.stats_attempted_requests = 0
 
     def can_request(self, request_type: str = "other") -> bool:
         """Check whether a request of the given type is still within budget.
@@ -219,6 +221,7 @@ class HHClient:
         url = f"{self.base_url}{path}"
         for attempt in range(3):
             try:
+                self.stats_attempted_requests += 1
                 response = self.session.get(url, params=params, timeout=self.timeout)
             except requests.RequestException as exc:
                 if attempt == 2:

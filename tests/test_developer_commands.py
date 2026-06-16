@@ -6,12 +6,12 @@ from pathlib import Path
 
 from rich.console import Console
 
-from src import main
+from src.commands import doctor, profiles, sample
 
 
-def _record_console(monkeypatch) -> Console:
+def _record_console(monkeypatch, target_module) -> Console:
     output = Console(record=True, width=160)
-    monkeypatch.setattr(main, "console", output)
+    monkeypatch.setattr(target_module, "console", output)
     return output
 
 
@@ -30,9 +30,9 @@ def test_doctor_does_not_fail_without_env(tmp_path: Path, monkeypatch) -> None:
     (config / "scoring_rules.yaml").write_text(
         "profiles: {}\nrisks: {}\n", encoding="utf-8"
     )
-    output = _record_console(monkeypatch)
+    output = _record_console(monkeypatch, doctor)
 
-    assert main.command_doctor(Namespace()) == 0
+    assert doctor.command_doctor(Namespace()) == 0
     rendered = output.export_text()
     assert ".env" in rendered
     assert "WARN" in rendered
@@ -57,18 +57,16 @@ profiles:
 """.strip(),
         encoding="utf-8",
     )
-    output = _record_console(monkeypatch)
+    output = _record_console(monkeypatch, profiles)
 
-    assert main.command_profiles(Namespace()) == 0
+    assert profiles.command_profiles(Namespace()) == 0
     rendered = output.export_text()
     assert "demo_profile" in rendered
     assert "remote" in rendered
     assert "python | automation | integration" in rendered
 
 
-def test_sample_export_creates_vacancies_and_files(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_sample_export_creates_vacancies_and_files(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DB_PATH", "data/sample.sqlite")
     config = tmp_path / "config"
@@ -95,11 +93,12 @@ risks:
 """.strip(),
         encoding="utf-8",
     )
-    _record_console(monkeypatch)
+    _record_console(monkeypatch, sample)
 
-    assert main.command_sample_export(Namespace()) == 0
-    assert main.command_sample_export(Namespace()) == 0
-    with sqlite3.connect(tmp_path / "data" / "sample.sqlite") as connection:
+    # sample-export now uses its own DB by default
+    assert sample.command_sample_export(Namespace(db=None)) == 0
+    assert sample.command_sample_export(Namespace(db=None)) == 0
+    with sqlite3.connect("data/sample_vacancies.sqlite") as connection:
         assert connection.execute("SELECT COUNT(*) FROM vacancies").fetchone()[0] == 6
         assert connection.execute("SELECT COUNT(*) FROM scores").fetchone()[0] == 6
         reviews = dict(

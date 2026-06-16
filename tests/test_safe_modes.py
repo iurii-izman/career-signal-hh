@@ -10,9 +10,11 @@ from typing import Any
 import pytest
 from rich.console import Console
 
-from src import main
+from src import config
+from src.commands import search as search_cmds
 from src.hh_client import HHBudgetExceeded, HHClient
 from src.models import Vacancy
+from src.services import search_runner
 from src.storage import Storage
 
 # ---------------------------------------------------------------------------
@@ -22,7 +24,8 @@ from src.storage import Storage
 
 def _record_console(monkeypatch: pytest.MonkeyPatch) -> Console:
     output = Console(record=True, width=160)
-    monkeypatch.setattr(main, "console", output)
+    monkeypatch.setattr(search_cmds, "console", output)
+    monkeypatch.setattr(search_runner, "console", output)
     return output
 
 
@@ -86,7 +89,7 @@ risks:
 
 def test_smoke_mode_sets_small_limits() -> None:
     """Smoke mode should have small budget, single profile, small pages."""
-    preset = main.SEARCH_MODES["smoke"]
+    preset = config.SEARCH_MODES["smoke"]
     assert preset["max_pages"] == 1
     assert preset["per_page"] == 10
     assert preset["max_requests_per_run"] == 50
@@ -97,7 +100,7 @@ def test_smoke_mode_sets_small_limits() -> None:
 
 def test_normal_mode_sets_medium_limits() -> None:
     """Normal mode should have medium budget."""
-    preset = main.SEARCH_MODES["normal"]
+    preset = config.SEARCH_MODES["normal"]
     assert preset["max_pages"] == 2
     assert preset["per_page"] == 25
     assert preset["max_requests_per_run"] == 250
@@ -108,7 +111,7 @@ def test_normal_mode_sets_medium_limits() -> None:
 
 def test_deep_mode_requires_confirmation() -> None:
     """Deep mode should require confirmation and have large budget."""
-    preset = main.SEARCH_MODES["deep"]
+    preset = config.SEARCH_MODES["deep"]
     assert preset["max_pages"] == 3
     assert preset["per_page"] == 50
     assert preset["max_requests_per_run"] == 800
@@ -126,7 +129,7 @@ def test_mode_overrides() -> None:
         verbose=False,
         yes=False,
     )
-    config = main._resolve_search_config(args)
+    config = search_cmds._resolve_search_config(args)
     assert config["max_pages"] == 5  # overridden
     assert config["per_page"] == 100  # overridden
     assert config["max_requests_per_run"] == 250  # from mode
@@ -307,7 +310,7 @@ def test_dry_run_does_not_make_api_calls(
     output = _record_console(monkeypatch)
 
     # Patch HHClient to fail if any API call is made
-    original_init = main.HHClient.__init__
+    original_init = HHClient.__init__
 
     def no_api_init(self, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
@@ -319,9 +322,9 @@ def test_dry_run_does_not_make_api_calls(
 
         self._request = fail_request
 
-    monkeypatch.setattr(main.HHClient, "__init__", no_api_init)
+    monkeypatch.setattr(HHClient, "__init__", no_api_init)
 
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="normal",
             max_pages=None,
@@ -349,7 +352,7 @@ def test_dry_run_smoke_shows_estimate(
     _make_minimal_profiles(tmp_path, monkeypatch)
     output = _record_console(monkeypatch)
 
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="smoke",
             max_pages=None,
@@ -418,7 +421,7 @@ def test_smoke_mode_selects_single_enabled_profile(
     output = _record_console(monkeypatch)
 
     # Simulate dry-run for smoke mode
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="smoke",
             max_pages=None,
@@ -512,16 +515,16 @@ def test_budget_stops_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     fake_api = _FakeSearchResponse()
 
-    original_init = main.HHClient.__init__
+    original_init = HHClient.__init__
 
     def fake_init(self: HHClient, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
         self.search_vacancies = fake_api.search_vacancies  # type: ignore[method-assign]
         self.get_vacancy = fake_api.get_vacancy  # type: ignore[method-assign]
 
-    monkeypatch.setattr(main.HHClient, "__init__", fake_init)
+    monkeypatch.setattr(HHClient, "__init__", fake_init)
 
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="smoke",
             max_pages=None,
@@ -556,16 +559,16 @@ def test_429_stops_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_api = _FakeSearchResponse()
     fake_api.should_429 = True
 
-    original_init = main.HHClient.__init__
+    original_init = HHClient.__init__
 
     def fake_init(self: HHClient, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
         self.search_vacancies = fake_api.search_vacancies  # type: ignore[method-assign]
         self.get_vacancy = fake_api.get_vacancy  # type: ignore[method-assign]
 
-    monkeypatch.setattr(main.HHClient, "__init__", fake_init)
+    monkeypatch.setattr(HHClient, "__init__", fake_init)
 
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="smoke",
             max_pages=None,
@@ -599,16 +602,16 @@ def test_force_details_does_not_ignore_budget(
 
     fake_api = _FakeSearchResponse()
 
-    original_init = main.HHClient.__init__
+    original_init = HHClient.__init__
 
     def fake_init(self: HHClient, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
         self.search_vacancies = fake_api.search_vacancies  # type: ignore[method-assign]
         self.get_vacancy = fake_api.get_vacancy  # type: ignore[method-assign]
 
-    monkeypatch.setattr(main.HHClient, "__init__", fake_init)
+    monkeypatch.setattr(HHClient, "__init__", fake_init)
 
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="smoke",  # smoke has max_details=25
             max_pages=None,
@@ -685,16 +688,16 @@ def test_skip_detail_preserves_description(
     output = _record_console(monkeypatch)
     fake_api = _FakeSearchResponse()
 
-    original_init = main.HHClient.__init__
+    original_init = HHClient.__init__
 
     def fake_init(self: HHClient, *args: Any, **kwargs: Any) -> None:
         original_init(self, *args, **kwargs)
         self.search_vacancies = fake_api.search_vacancies
         self.get_vacancy = fake_api.get_vacancy
 
-    monkeypatch.setattr(main.HHClient, "__init__", fake_init)
+    monkeypatch.setattr(HHClient, "__init__", fake_init)
 
-    result = main.command_search(
+    result = search_cmds.command_search(
         Namespace(
             mode="smoke",
             max_pages=None,

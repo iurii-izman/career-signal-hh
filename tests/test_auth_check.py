@@ -2,7 +2,8 @@ from argparse import Namespace
 
 from rich.console import Console
 
-from src import main
+from src.commands import auth
+from src.hh_client import HHClient
 
 
 class FakeClient:
@@ -19,11 +20,11 @@ class FakeClient:
 
 def test_auth_check_does_not_print_token(monkeypatch) -> None:
     output = Console(record=True, width=120)
-    monkeypatch.setattr(main, "console", output)
-    monkeypatch.setattr(main, "load_dotenv", lambda: None)
-    monkeypatch.setattr(main, "HHClient", FakeClient)
+    monkeypatch.setattr(auth, "console", output)
+    monkeypatch.setattr(auth, "load_dotenv", lambda: None)
+    monkeypatch.setattr(auth, "HHClient", FakeClient)
 
-    assert main.command_auth_check(Namespace()) == 0
+    assert auth.command_auth_check(Namespace()) == 0
 
     rendered = output.export_text()
     assert "super-secret-token-value" not in rendered
