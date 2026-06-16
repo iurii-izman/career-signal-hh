@@ -414,6 +414,37 @@ python -m src.main review next-best
 python -m src.main apply-pack --top 5 --decision strong_match
 ```
 
+## Market analytics
+
+Анализ рынка вакансий: навыки, работодатели, зарплаты, пресеты, воронка откликов.
+
+```powershell
+# Сводка
+python -m src.main analytics summary
+
+# Топ навыков с группировкой по пресетам
+python -m src.main analytics skills
+
+# Топ работодателей
+python -m src.main analytics employers
+
+# Зарплатная аналитика
+python -m src.main analytics salary
+
+# Эффективность пресетов
+python -m src.main analytics presets
+
+# Воронка откликов
+python -m src.main analytics funnel
+
+# Экспорт всех отчётов
+python -m src.main analytics export
+# → exports/analytics_report.html
+# → exports/analytics_summary.json
+# → exports/analytics_skills.csv
+# → exports/analytics_employers.csv
+```
+
 ## Scoring v2 (explainable)
 
 Новый scoring с полевыми весами, отслеживанием ключевых слов и decision labels.

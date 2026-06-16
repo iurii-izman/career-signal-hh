@@ -2,6 +2,15 @@ from __future__ import annotations
 
 import argparse
 
+from .commands.analytics import (
+    command_analytics_employers,
+    command_analytics_export,
+    command_analytics_funnel,
+    command_analytics_presets,
+    command_analytics_salary,
+    command_analytics_skills,
+    command_analytics_summary,
+)
 from .commands.apply_pack import command_apply_pack
 from .commands.auth import command_auth_check
 from .commands.autopilot import command_autopilot_daily, command_autopilot_status
@@ -146,6 +155,19 @@ def build_parser() -> argparse.ArgumentParser:
     auto_daily.set_defaults(func=command_autopilot_daily)
     auto_status = autopilot_sub.add_parser("status")
     auto_status.set_defaults(func=command_autopilot_status)
+
+    # --- analytics ---
+    analytics_parser = sub.add_parser("analytics")
+    analytics_sub = analytics_parser.add_subparsers(
+        dest="analytics_command", required=True
+    )
+    analytics_sub.add_parser("summary").set_defaults(func=command_analytics_summary)
+    analytics_sub.add_parser("skills").set_defaults(func=command_analytics_skills)
+    analytics_sub.add_parser("employers").set_defaults(func=command_analytics_employers)
+    analytics_sub.add_parser("salary").set_defaults(func=command_analytics_salary)
+    analytics_sub.add_parser("presets").set_defaults(func=command_analytics_presets)
+    analytics_sub.add_parser("funnel").set_defaults(func=command_analytics_funnel)
+    analytics_sub.add_parser("export").set_defaults(func=command_analytics_export)
 
     # --- score ---
     score_parser = sub.add_parser("score")
