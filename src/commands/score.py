@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from ..config import _services
 from ..models import Vacancy
 from ..scoring_v2 import compute_score_details
 from ..search_presets import get_preset, list_presets

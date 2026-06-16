@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .models import KeywordHit, ScoreDetails, ScoreResult, Vacancy
-from .utils import normalize_text
+from .utils import normalize_text, parse_datetime
 
 # Field weight multipliers
 FIELD_WEIGHTS = {
@@ -313,8 +313,6 @@ def _score_remote(vacancy: Vacancy, preset: dict[str, Any]) -> tuple[int, list[s
 
 
 def _freshness(published_at: str | None) -> int:
-    from .utils import parse_datetime
-
     published = parse_datetime(published_at)
     if not published:
         return 0
