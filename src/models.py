@@ -85,3 +85,23 @@ class ScoreResult(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     work_format_flags: list[str] = Field(default_factory=list)
     scored_at: str
+
+
+class KeywordHit(BaseModel):
+    keyword: str
+    field: str  # title, skills, description, snippet, employer
+    weight: int
+    reason: str  # include, boost, exclude, penalty
+
+
+class ScoreDetails(BaseModel):
+    vacancy_id: str
+    preset_name: str
+    total_score: int
+    decision: str  # strong_match, queue, review_later, weak_match, auto_hide
+    category_scores: dict[str, int] = Field(default_factory=dict)
+    matched_keywords: list[KeywordHit] = Field(default_factory=list)
+    excluded_keywords: list[KeywordHit] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    explanation: dict[str, Any] = Field(default_factory=dict)
+    scored_at: str

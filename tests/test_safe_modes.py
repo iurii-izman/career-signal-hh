@@ -780,6 +780,7 @@ def test_score_by_preset_uses_preset_name_as_best_profile() -> None:
         "include": {"any": ["python", "rag", "llm"]},
         "boost": {},
         "penalties": {},
+        "remote_only": False,
     }
     result = score_by_preset(vacancy, preset)
     assert result.best_profile == "ai_rag_remote"
@@ -805,6 +806,7 @@ def test_exclude_checks_full_text_not_just_title_and_desc() -> None:
         "exclude": {"any": ["gambling"]},
         "boost": {},
         "penalties": {},
+        "remote_only": False,
     }
     result = score_by_preset(vacancy, preset)
     # Should have exclude penalty because "gambling" is in skills
@@ -821,6 +823,7 @@ def test_score_by_preset_adhoc_mode() -> None:
         id="test-adhoc",
         name="Python Developer",
         description_text="FastAPI backend",
+        schedule_name="remote",
         raw_json="{}",
         first_seen_at=datetime.now(timezone.utc).isoformat(),
         last_seen_at=datetime.now(timezone.utc).isoformat(),

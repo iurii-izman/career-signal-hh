@@ -20,7 +20,6 @@ from ..hh_client import (
 )
 from ..models import Vacancy
 from ..scoring import score_vacancy
-from ..scoring_v2 import score_by_preset
 from ..search_presets import create_adhoc_preset, get_preset, list_presets
 from ..search_profiles import load_search_profiles
 from ..services.search_runner import print_run_estimate, print_run_summary
@@ -419,6 +418,10 @@ def _score_and_store(
     preset = unit.get("preset")
     mode = unit.get("mode", "legacy")
     if preset and mode in ("preset", "adhoc"):
-        storage.upsert_score(score_by_preset(vacancy, preset))
+        from ..scoring_v2 import _to_score_result, compute_score_details
+
+        details = compute_score_details(vacancy, preset)
+        storage.upsert_score_details(details)
+        storage.upsert_score(_to_score_result(details))
     elif rules:
         storage.upsert_score(score_vacancy(vacancy, rules))

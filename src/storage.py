@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .models import ScoreResult, Vacancy
+from .models import ScoreDetails, ScoreResult, Vacancy
 from .utils import json_dumps
 
 SCHEMA = """
@@ -24,6 +24,19 @@ CREATE TABLE IF NOT EXISTS scores (
     ai_automation_score INTEGER, bitrix_1c_score INTEGER,
     best_profile TEXT, match_reasons_json TEXT, risk_flags_json TEXT,
     work_format_flags_json TEXT, scored_at TEXT,
+    FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+);
+CREATE TABLE IF NOT EXISTS score_details (
+    vacancy_id TEXT PRIMARY KEY,
+    preset_name TEXT,
+    total_score INTEGER NOT NULL,
+    decision TEXT NOT NULL,
+    category_scores_json TEXT NOT NULL,
+    matched_keywords_json TEXT NOT NULL,
+    excluded_keywords_json TEXT NOT NULL,
+    risk_flags_json TEXT NOT NULL,
+    explanation_json TEXT NOT NULL,
+    scored_at TEXT NOT NULL,
     FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
 );
 CREATE TABLE IF NOT EXISTS search_runs (
@@ -45,6 +58,8 @@ CREATE TABLE IF NOT EXISTS vacancy_reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_vacancies_published ON vacancies(published_at);
 CREATE INDEX IF NOT EXISTS idx_scores_total ON scores(total_score);
+CREATE INDEX IF NOT EXISTS idx_score_details_preset ON score_details(preset_name);
+CREATE INDEX IF NOT EXISTS idx_score_details_decision ON score_details(decision);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON vacancy_reviews(status);
 """
 
@@ -321,6 +336,70 @@ class Storage:
                 f"ON CONFLICT(vacancy_id) DO UPDATE SET {updates}",
                 [values[column] for column in columns],
             )
+
+    def upsert_score_details(self, details: ScoreDetails) -> None:
+        """Insert or update score_details for a vacancy."""
+        from .models import ScoreDetails
+
+        values = details.model_dump()
+        values["category_scores_json"] = json_dumps(values.pop("category_scores"))
+        values["matched_keywords_json"] = json_dumps(
+            [kw.model_dump() for kw in details.matched_keywords]
+        )
+        values.pop("matched_keywords", None)
+        values["excluded_keywords_json"] = json_dumps(
+            [kw.model_dump() for kw in details.excluded_keywords]
+        )
+        values.pop("excluded_keywords", None)
+        values["risk_flags_json"] = json_dumps(values.pop("risk_flags"))
+        values["explanation_json"] = json_dumps(values.pop("explanation"))
+        columns = list(values)
+        updates = ", ".join(
+            f"{column}=excluded.{column}"
+            for column in columns
+            if column != "vacancy_id"
+        )
+        with self.connect() as connection:
+            connection.execute(
+                f"INSERT INTO score_details ({', '.join(columns)}) VALUES "
+                f"({', '.join('?' for _ in columns)}) "
+                f"ON CONFLICT(vacancy_id) DO UPDATE SET {updates}",
+                [values[column] for column in columns],
+            )
+
+    def get_score_details(self, vacancy_id: str) -> dict[str, Any] | None:
+        """Return score_details row as dict, or None."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM score_details WHERE vacancy_id = ?",
+                (vacancy_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_vacancy(self, vacancy_id: str) -> dict[str, Any] | None:
+        """Return a full vacancy row as dict, or None."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_vacancies_for_rescore(
+        self, limit: int | None = None, preset: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return vacancies that can be rescored. Optionally filter by source_profile."""
+        where = ["COALESCE(v.archived, 0) = 0"]
+        params: list[Any] = []
+        if preset:
+            where.append("v.source_profile = ?")
+            params.append(preset)
+        sql = "SELECT v.* FROM vacancies v WHERE " + " AND ".join(where)
+        sql += " ORDER BY v.last_seen_at DESC"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
 
     def add_search_run(self, run: dict[str, Any]) -> None:
         columns = list(run)

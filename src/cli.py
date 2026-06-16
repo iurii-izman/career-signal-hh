@@ -16,6 +16,7 @@ from .commands.review import (
     command_review_set,
 )
 from .commands.sample import command_sample_export
+from .commands.score import command_score_explain, command_score_rescore
 from .commands.search import command_search
 from .commands.stats import command_stats, command_top
 from .storage import REVIEW_STATUSES
@@ -94,6 +95,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip confirmation prompts (e.g. for deep mode).",
     )
     search.set_defaults(func=command_search)
+
+    # --- score ---
+    score_parser = sub.add_parser("score")
+    score_sub = score_parser.add_subparsers(dest="score_command", required=True)
+    score_explain = score_sub.add_parser("explain")
+    score_explain.add_argument("vacancy_id", help="Vacancy ID to explain.")
+    score_explain.set_defaults(func=command_score_explain)
+    score_rescore = score_sub.add_parser("rescore")
+    score_rescore.add_argument("--preset", help="Preset to use for rescoring.")
+    score_rescore.add_argument("--limit", type=int, help="Max vacancies to rescore.")
+    score_rescore.set_defaults(func=command_score_rescore)
 
     # --- presets ---
     presets_parser = sub.add_parser("presets")

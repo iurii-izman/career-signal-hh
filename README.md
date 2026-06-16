@@ -334,7 +334,53 @@ python -c "from src.hh_client import HHClient; import os, json; from dotenv impo
 Параметры `schedule` и `experience` отправляются как повторяющиеся query
 parameters. Их допустимые значения следует сверять с `GET /dictionaries`.
 
-## Правила scoring
+## Scoring v2 (explainable)
+
+Новый scoring с полевыми весами, отслеживанием ключевых слов и decision labels.
+Работает с universal presets и сохраняет детали в таблицу `score_details`.
+
+### Field weights
+
+| Поле | Вес |
+|------|-----|
+| title | 3.0× |
+| skills | 2.0× |
+| snippet | 1.5× |
+| description | 1.0× |
+| employer | 0.5× |
+
+### Decision labels
+
+| Label | Threshold |
+|-------|----------|
+| strong_match | ≥ 85 |
+| queue | ≥ 70 |
+| review_later | ≥ 50 |
+| weak_match | ≥ 25 |
+| auto_hide | < 25 |
+
+### Категории score
+
+- **include** — совпадения include.any/all/title с полевыми весами
+- **boost** — явные boost из preset.boost.{title,skills,description}
+- **exclude** — штрафы за exclude.any/title
+- **penalties** — кастомные штрафы из preset.penalties
+- **salary** — бонус за наличие зарплаты (+5), валюту USD/EUR (+2), высокую сумму (+1-3)
+- **remote** — +10 за remote, +5 за hybrid, -5 за onsite/unknown
+- **freshness** — 0-10 за свежесть
+
+### Команды
+
+```powershell
+# Объяснить score вакансии
+python -m src.main score explain VACANCY_ID
+
+# Пересчитать score для существующих вакансий
+python -m src.main score rescore --preset ai_rag_remote --limit 100
+python -m src.main score rescore --limit 50
+```
+
+## Правила scoring (legacy)
 
 `config/scoring_rules.yaml` содержит ключевые слова, веса и негативные флаги.
 Профильный score ограничен диапазоном 0–90, затем к лучшему профилю добавляется
