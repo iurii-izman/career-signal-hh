@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import time
 from typing import Any
 
@@ -33,6 +34,12 @@ class HHAuthorizationRequired(HHAPIError):
     pass
 
 
+class HHBudgetExceeded(HHAPIError):
+    """Raised when the request budget has been exhausted."""
+
+    pass
+
+
 class HHClient:
     base_url = "https://api.hh.ru"
 
@@ -44,23 +51,37 @@ class HHClient:
         app_access_token: str | None = None,
     ) -> None:
         self.timeout = timeout
-        self.auth_mode = (auth_mode or os.getenv("HH_AUTH_MODE", "none")).strip().lower()
+        self.auth_mode = (
+            (auth_mode or os.getenv("HH_AUTH_MODE", "none")).strip().lower()
+        )
         self.app_access_token = (
             app_access_token
             if app_access_token is not None
             else os.getenv("HH_APP_ACCESS_TOKEN", "")
         ).strip()
-        self.user_agent = user_agent or os.getenv(
-            "HH_USER_AGENT", "CareerSignalHH/0.1"
-        )
+        self.user_agent = user_agent or os.getenv("HH_USER_AGENT", "CareerSignalHH/0.1")
         self.session = requests.Session()
         self.session.headers.update(
             {"User-Agent": self.user_agent, "Accept": "application/json"}
         )
         if self.auth_mode == "application_token" and self.app_access_token:
-            self.session.headers["Authorization"] = (
-                f"Bearer {self.app_access_token}"
-            )
+            self.session.headers["Authorization"] = f"Bearer {self.app_access_token}"
+
+        # Rate limiting configuration
+        self.delay_min = float(os.getenv("HH_DELAY_MIN_SECONDS", "0.7"))
+        self.delay_max = float(os.getenv("HH_DELAY_MAX_SECONDS", "1.5"))
+        self.cooldown_429 = float(os.getenv("HH_COOLDOWN_ON_429_SECONDS", "120"))
+        self.stop_on_429 = os.getenv("HH_STOP_ON_429", "true").strip().lower() == "true"
+
+        # Budget tracking (set via set_budget before a run)
+        self.budget: dict[str, int] | None = None
+
+        # Run statistics
+        self.stats_429: int = 0
+        self.stats_errors: int = 0
+        self.stats_search_requests: int = 0
+        self.stats_detail_requests: int = 0
+        self.stats_dict_requests: int = 0
 
     def _validate_auth(self) -> None:
         if self.auth_mode == "application_token" and not self.app_access_token:
@@ -93,22 +114,142 @@ class HHClient:
 
         return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
 
-    def _request(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    # ------------------------------------------------------------------
+    # Budget API
+    # ------------------------------------------------------------------
+
+    def set_budget(self, max_requests: int, max_details: int) -> None:
+        """Configure the request budget for the upcoming search run."""
+        self.budget = {
+            "max_requests": max_requests,
+            "max_details": max_details,
+            "total": 0,
+            "search": 0,
+            "detail": 0,
+            "dict": 0,
+        }
+        self.stats_429 = 0
+        self.stats_errors = 0
+        self.stats_search_requests = 0
+        self.stats_detail_requests = 0
+        self.stats_dict_requests = 0
+
+    def can_request(self, request_type: str = "other") -> bool:
+        """Check whether a request of the given type is still within budget.
+
+        Returns True if the request is allowed, False otherwise.
+        """
+        if self.budget is None:
+            return True
+        if self.budget["total"] >= self.budget["max_requests"]:
+            return False
+        if (
+            request_type == "detail"
+            and self.budget["detail"] >= self.budget["max_details"]
+        ):
+            return False
+        return True
+
+    def budget_summary(self) -> dict[str, int]:
+        """Return a snapshot of current budget counters."""
+        if self.budget is None:
+            return {
+                "total": 0,
+                "search": 0,
+                "detail": 0,
+                "dict": 0,
+                "max_requests": 0,
+                "max_details": 0,
+            }
+        return {
+            "total": self.budget["total"],
+            "search": self.budget["search"],
+            "detail": self.budget["detail"],
+            "dict": self.budget["dict"],
+            "max_requests": self.budget["max_requests"],
+            "max_details": self.budget["max_details"],
+        }
+
+    def _record_request(self, request_type: str) -> None:
+        if self.budget is None:
+            return
+        self.budget["total"] += 1
+        self.budget[request_type] += 1
+        if request_type == "search":
+            self.stats_search_requests += 1
+        elif request_type == "detail":
+            self.stats_detail_requests += 1
+        elif request_type == "dict":
+            self.stats_dict_requests += 1
+
+    def _apply_delay(self) -> None:
+        """Sleep a random interval between delay_min and delay_max seconds."""
+        delay = random.uniform(self.delay_min, self.delay_max)
+        time.sleep(delay)
+
+    def _request(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        request_type: str = "other",
+    ) -> Any:
         self._validate_auth()
+
+        # --- budget guard ---
+        if (
+            self.budget is not None
+            and self.budget["total"] >= self.budget["max_requests"]
+        ):
+            raise HHBudgetExceeded(
+                f"Request budget exceeded ({self.budget['total']}/{self.budget['max_requests']} total requests)."
+            )
+        if (
+            request_type == "detail"
+            and self.budget is not None
+            and self.budget["detail"] >= self.budget["max_details"]
+        ):
+            raise HHBudgetExceeded(
+                f"Detail request budget exceeded ({self.budget['detail']}/{self.budget['max_details']} detail requests)."
+            )
+
+        # --- pre-request delay ---
+        self._apply_delay()
+
         url = f"{self.base_url}{path}"
         for attempt in range(3):
             try:
                 response = self.session.get(url, params=params, timeout=self.timeout)
             except requests.RequestException as exc:
                 if attempt == 2:
+                    self.stats_errors += 1
                     raise HHAPIError(f"HH API недоступен: {exc}") from exc
                 time.sleep(1.5 * (attempt + 1))
                 continue
-            if response.status_code == 429 and attempt < 2:
-                delay = float(response.headers.get("Retry-After", 1.5 * (attempt + 1)))
-                LOGGER.warning("HH API rate limit, повтор через %.1f сек.", delay)
-                time.sleep(delay)
-                continue
+
+            # --- 429 handling ---
+            if response.status_code == 429:
+                self.stats_429 += 1
+                if self.stop_on_429:
+                    raise HHAPIError(
+                        "HH API вернул 429 (rate limit). Остановка согласно HH_STOP_ON_429=true.",
+                        status_code=429,
+                        path=path,
+                    )
+                if attempt == 0:
+                    delay = float(
+                        response.headers.get("Retry-After", self.cooldown_429)
+                    )
+                    LOGGER.warning("HH API rate limit (429), ожидание %.1f сек.", delay)
+                    time.sleep(delay)
+                    continue
+                # Second 429 in a row — stop
+                raise HHAPIError(
+                    "HH API повторно вернул 429 (rate limit). Остановка.",
+                    status_code=429,
+                    path=path,
+                )
+
             if response.status_code >= 400:
                 body = self._response_body(response)
                 detail = self._body_text(body)
@@ -143,13 +284,19 @@ class HHClient:
                         body=body,
                         path=path,
                     )
+                self.stats_errors += 1
                 raise HHAPIError(
                     f"HH API вернул {response.status_code} для {path}: {detail}",
                     status_code=response.status_code,
                     body=body,
                     path=path,
                 )
+
+            # --- success: record and return ---
+            self._record_request(request_type)
             return response.json()
+
+        self.stats_errors += 1
         raise HHAPIError(f"HH API не ответил после повторов: {path}")
 
     def search_vacancies(
@@ -172,19 +319,23 @@ class HHClient:
                 params.extend((key, item) for item in value)
             elif value is not None:
                 params.append((key, value))
-        return self._request("/vacancies", dict(params) if not extra_params else params)
+        return self._request(
+            "/vacancies",
+            dict(params) if not extra_params else params,
+            request_type="search",
+        )
 
     def get_vacancy(self, vacancy_id: str) -> dict[str, Any]:
-        return self._request(f"/vacancies/{vacancy_id}")
+        return self._request(f"/vacancies/{vacancy_id}", request_type="detail")
 
     def get_me(self) -> dict[str, Any]:
-        return self._request("/me")
+        return self._request("/me", request_type="dict")
 
     def get_areas(self) -> list[dict[str, Any]]:
-        return self._request("/areas")
+        return self._request("/areas", request_type="dict")
 
     def get_dictionaries(self) -> dict[str, Any]:
-        return self._request("/dictionaries")
+        return self._request("/dictionaries", request_type="dict")
 
     def get_professional_roles(self) -> dict[str, Any]:
-        return self._request("/professional_roles")
+        return self._request("/professional_roles", request_type="dict")
