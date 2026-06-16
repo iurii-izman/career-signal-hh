@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -129,21 +128,13 @@ def create_adhoc_preset(
     """Create a temporary in-memory preset for ad-hoc search."""
     include = include or []
     exclude = exclude or []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name = f"adhoc_{timestamp}"
 
     return {
-        "_name": name,
+        "_name": "adhoc",
         "_source": "adhoc",
         "enabled": True,
-        "description": f"Ad-hoc search ({len(include)} include, {len(exclude)} exclude)",
+        "description": f"Ad-hoc ({len(include)} in, {len(exclude)} ex)",
         "search_terms": include[:],
-        "filters": {
-            "remote_only": remote_only,
-            "areas": [],
-            "schedule": ["remote"] if remote_only else [],
-            "experience": [],
-        },
         "include": {"any": include[:], "all": []},
         "exclude": {"any": exclude[:]},
         "remote_only": remote_only,

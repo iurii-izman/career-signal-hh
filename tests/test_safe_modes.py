@@ -758,6 +758,79 @@ def test_skip_detail_preserves_description(
     )
 
 
+# ---------------------------------------------------------------------------
+# Scoring v2 correctness tests
+# ---------------------------------------------------------------------------
+
+
+def test_score_by_preset_uses_preset_name_as_best_profile() -> None:
+    """Preset-scored vacancy should have best_profile = preset name."""
+    from src.scoring_v2 import score_by_preset
+
+    vacancy = Vacancy(
+        id="test-preset",
+        name="LLM Engineer",
+        description_text="Python FastAPI LangChain RAG",
+        raw_json="{}",
+        first_seen_at=datetime.now(timezone.utc).isoformat(),
+        last_seen_at=datetime.now(timezone.utc).isoformat(),
+    )
+    preset = {
+        "_name": "ai_rag_remote",
+        "include": {"any": ["python", "rag", "llm"]},
+        "boost": {},
+        "penalties": {},
+    }
+    result = score_by_preset(vacancy, preset)
+    assert result.best_profile == "ai_rag_remote"
+    assert result.total_score >= 30  # 3 any matches × 15
+
+
+def test_exclude_checks_full_text_not_just_title_and_desc() -> None:
+    """Exclude.any should match against full vacancy text (including skills)."""
+    from src.scoring_v2 import score_by_preset
+
+    vacancy = Vacancy(
+        id="test-excl",
+        name="Senior Developer",
+        description_text="Building great products",
+        key_skills=["Python", "gambling"],
+        raw_json="{}",
+        first_seen_at=datetime.now(timezone.utc).isoformat(),
+        last_seen_at=datetime.now(timezone.utc).isoformat(),
+    )
+    preset = {
+        "_name": "test",
+        "include": {"any": ["python"]},
+        "exclude": {"any": ["gambling"]},
+        "boost": {},
+        "penalties": {},
+    }
+    result = score_by_preset(vacancy, preset)
+    # Should have exclude penalty because "gambling" is in skills
+    assert "exclude_match" in result.risk_flags
+    assert result.total_score < 15  # 15 base - 30 exclude = -15 → clipped to 0
+
+
+def test_score_by_preset_adhoc_mode() -> None:
+    """Adhoc preset should score with mode='adhoc'."""
+    from src.scoring_v2 import score_by_preset
+    from src.search_presets import create_adhoc_preset
+
+    vacancy = Vacancy(
+        id="test-adhoc",
+        name="Python Developer",
+        description_text="FastAPI backend",
+        raw_json="{}",
+        first_seen_at=datetime.now(timezone.utc).isoformat(),
+        last_seen_at=datetime.now(timezone.utc).isoformat(),
+    )
+    preset = create_adhoc_preset(["Python", "FastAPI"], ["QA"])
+    result = score_by_preset(vacancy, preset)
+    assert result.best_profile == "adhoc"
+    assert result.total_score >= 15  # at least one include match
+
+
 def test_touch_vacancy_returns_false_for_unknown_id(tmp_path: Path) -> None:
     """touch_vacancy should return False when vacancy doesn't exist."""
     storage = Storage(str(tmp_path / "touch2.sqlite"))

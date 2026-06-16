@@ -19,15 +19,15 @@ def score_by_preset(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreResult:
     desc = normalize_text(vacancy.description_text or "")
 
     # --- Base score from include matches ---
-    base_score = _compute_include_score(text, title, skills_text, desc, preset)
+    base_score = _compute_include_score(text, title, preset)
 
-    # --- Exclude penalties ---
-    exclude_penalty = _compute_exclude_penalty(title, desc, preset)
+    # --- Exclude penalties (check against full text for any, title for title) ---
+    exclude_penalty = _compute_exclude_penalty(text, title, preset)
 
-    # --- Boost ---
+    # --- Boost (per-field) ---
     boost = _compute_boost(title, skills_text, desc, preset)
 
-    # --- Custom penalties ---
+    # --- Custom penalties (per-field) ---
     custom_penalty = _compute_custom_penalties(title, desc, preset)
 
     # --- Salary bonus ---
@@ -79,10 +79,8 @@ def _vacancy_search_text(vacancy: Vacancy) -> str:
     return normalize_text(" ".join(f for f in fields if f))
 
 
-def _compute_include_score(
-    text: str, title: str, skills_text: str, desc: str, preset: dict[str, Any]
-) -> int:
-    """Score based on include.any and include.all matches."""
+def _compute_include_score(text: str, title: str, preset: dict[str, Any]) -> int:
+    """Score based on include.any (full text), include.title (title only), include.all (full text)."""
     include = preset.get("include", {})
     any_keywords = include.get("any", [])
     all_keywords = include.get("all", [])
@@ -106,8 +104,8 @@ def _compute_include_score(
     return min(90, score)
 
 
-def _compute_exclude_penalty(title: str, desc: str, preset: dict[str, Any]) -> int:
-    """Penalty for exclude matches."""
+def _compute_exclude_penalty(text: str, title: str, preset: dict[str, Any]) -> int:
+    """Penalty for exclude matches. any checks full text, title checks title."""
     exclude = preset.get("exclude", {})
     any_keywords = exclude.get("any", [])
     title_keywords = exclude.get("title", [])
@@ -115,7 +113,7 @@ def _compute_exclude_penalty(title: str, desc: str, preset: dict[str, Any]) -> i
     penalty = 0
     for kw in any_keywords:
         nk = normalize_text(kw)
-        if nk in title or nk in desc:
+        if nk in text:
             penalty += 30
     for kw in title_keywords:
         nk = normalize_text(kw)
