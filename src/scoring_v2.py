@@ -39,9 +39,7 @@ def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDeta
     # --- Field extraction ---
     title = normalize_text(vacancy.name)
     skills_txt = normalize_text(" ".join(vacancy.key_skills))
-    snippet = normalize_text(
-        f"{vacancy.snippet_requirement} {vacancy.snippet_responsibility}"
-    )
+    snippet = normalize_text(f"{vacancy.snippet_requirement} {vacancy.snippet_responsibility}")
     description = normalize_text(vacancy.description_text or "")
     employer = normalize_text(vacancy.employer_name or "")
 
@@ -133,6 +131,7 @@ def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDeta
         matched_keywords=matched,
         excluded_keywords=excluded,
         risk_flags=risk_flags + ([f"work:{f}" for f in work_flags if f != "remote"]),
+        work_format_flags=work_flags,
         explanation=explanation,
         scored_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -155,9 +154,7 @@ def _score_include(
             if nk in ftext:
                 weight = int(10 * FIELD_WEIGHTS.get(fname, 1.0))
                 total += weight
-                matched.append(
-                    KeywordHit(keyword=kw, field=fname, weight=weight, reason="include")
-                )
+                matched.append(KeywordHit(keyword=kw, field=fname, weight=weight, reason="include"))
                 break  # one match per keyword
 
     # include.title: check title only
@@ -166,15 +163,11 @@ def _score_include(
         if nk in fields["title"]:
             weight = int(12 * FIELD_WEIGHTS["title"])
             total += weight
-            matched.append(
-                KeywordHit(keyword=kw, field="title", weight=weight, reason="include")
-            )
+            matched.append(KeywordHit(keyword=kw, field="title", weight=weight, reason="include"))
         elif nk in fields["snippet"]:
             weight = int(8 * FIELD_WEIGHTS["snippet"])
             total += weight
-            matched.append(
-                KeywordHit(keyword=kw, field="snippet", weight=weight, reason="include")
-            )
+            matched.append(KeywordHit(keyword=kw, field="snippet", weight=weight, reason="include"))
 
     # include.all: ALL must match in full text
     if all_kw:
@@ -182,16 +175,12 @@ def _score_include(
         if all(normalize_text(kw) in full_text for kw in all_kw):
             total += 20
             for kw in all_kw:
-                matched.append(
-                    KeywordHit(keyword=kw, field="any", weight=10, reason="include.all")
-                )
+                matched.append(KeywordHit(keyword=kw, field="any", weight=10, reason="include.all"))
 
     return min(90, total)
 
 
-def _score_boost(
-    preset: dict[str, Any], fields: dict[str, str], matched: list[KeywordHit]
-) -> int:
+def _score_boost(preset: dict[str, Any], fields: dict[str, str], matched: list[KeywordHit]) -> int:
     boost = preset.get("boost", {})
     total = 0
     for fname, rules in boost.items():
@@ -204,9 +193,7 @@ def _score_boost(
                     weight = int(w)
                     total += weight
                     matched.append(
-                        KeywordHit(
-                            keyword=kw, field=fname, weight=weight, reason="boost"
-                        )
+                        KeywordHit(keyword=kw, field=fname, weight=weight, reason="boost")
                     )
     return min(30, total)
 
@@ -228,15 +215,11 @@ def _score_exclude(
         nk = normalize_text(kw)
         if nk in fields["title"]:
             penalty += 30
-            excluded.append(
-                KeywordHit(keyword=kw, field="title", weight=-30, reason="exclude")
-            )
+            excluded.append(KeywordHit(keyword=kw, field="title", weight=-30, reason="exclude"))
             risk_flags.append("exclude_match")
         elif nk in full_text:
             penalty += 20
-            excluded.append(
-                KeywordHit(keyword=kw, field="text", weight=-20, reason="exclude")
-            )
+            excluded.append(KeywordHit(keyword=kw, field="text", weight=-20, reason="exclude"))
             if "exclude_match" not in risk_flags:
                 risk_flags.append("exclude_match")
 
@@ -244,9 +227,7 @@ def _score_exclude(
         nk = normalize_text(kw)
         if nk in fields["title"]:
             penalty += 40
-            excluded.append(
-                KeywordHit(keyword=kw, field="title", weight=-40, reason="exclude")
-            )
+            excluded.append(KeywordHit(keyword=kw, field="title", weight=-40, reason="exclude"))
             risk_flags.append("exclude_title")
 
     return penalty
@@ -270,9 +251,7 @@ def _score_penalties(
                     weight = int(w)
                     total += weight
                     excluded.append(
-                        KeywordHit(
-                            keyword=kw, field=fname, weight=-weight, reason="penalty"
-                        )
+                        KeywordHit(keyword=kw, field=fname, weight=-weight, reason="penalty")
                     )
                     if not risk_flags or "penalty_match" not in risk_flags:
                         risk_flags.append("penalty_match")
@@ -317,9 +296,7 @@ def _freshness(published_at: str | None) -> int:
     if not published:
         return 0
     age = max(0, (datetime.now(timezone.utc) - published).days)
-    return (
-        10 if age <= 1 else 7 if age <= 3 else 4 if age <= 7 else 1 if age <= 14 else 0
-    )
+    return 10 if age <= 1 else 7 if age <= 3 else 4 if age <= 7 else 1 if age <= 14 else 0
 
 
 def _work_flags(vacancy: Vacancy) -> list[str]:
@@ -348,10 +325,7 @@ def _compute_decision(total: int, thresholds: dict[str, int]) -> str:
 
 def _to_score_result(details: ScoreDetails) -> ScoreResult:
     """Convert ScoreDetails to legacy ScoreResult for backward compatibility."""
-    reasons = [
-        f"{kw.keyword} ({kw.field}, +{kw.weight})"
-        for kw in details.matched_keywords[:6]
-    ]
+    reasons = [f"{kw.keyword} ({kw.field}, +{kw.weight})" for kw in details.matched_keywords[:6]]
     if details.category_scores.get("freshness", 0):
         reasons.append(f"freshness (+{details.category_scores['freshness']})")
     if details.category_scores.get("salary", 0):
@@ -362,24 +336,11 @@ def _to_score_result(details: ScoreDetails) -> ScoreResult:
     return ScoreResult(
         vacancy_id=details.vacancy_id,
         total_score=details.total_score,
-        ai_automation_score=details.total_score
-        if details.preset_name.startswith("ai")
-        else 0,
-        bitrix_1c_score=details.total_score
-        if details.preset_name.startswith("bitrix")
-        else 0,
+        ai_automation_score=details.total_score if details.preset_name.startswith("ai") else 0,
+        bitrix_1c_score=details.total_score if details.preset_name.startswith("bitrix") else 0,
         best_profile=details.preset_name,
         match_reasons=reasons,
         risk_flags=details.risk_flags,
-        work_format_flags=_work_flags_from_details(details),
+        work_format_flags=details.work_format_flags,
         scored_at=details.scored_at,
     )
-
-
-def _work_flags_from_details(details: ScoreDetails) -> list[str]:
-    # Extract work format flags from risk_flags
-    flags = []
-    for f in details.risk_flags:
-        if f.startswith("work:"):
-            flags.append(f[5:])
-    return flags if flags else ["unknown"]

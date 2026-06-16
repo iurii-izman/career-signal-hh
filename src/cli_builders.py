@@ -1,0 +1,288 @@
+"""Parser builder functions for CareerSignal HH CLI.
+
+Each function takes an argparse subparser object and registers its arguments.
+"""
+
+from __future__ import annotations
+
+import argparse
+
+from .commands import (
+    analytics,
+    apply_pack,
+    auth,
+    autopilot,
+    db,
+    doctor,
+    export,
+    presets,
+    profiles,
+    review,
+    sample,
+    score,
+    search,
+    stats,
+    version_cmd,
+)
+from .storage import REVIEW_STATUSES
+
+
+def build_search_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("search")
+    p.add_argument(
+        "--mode",
+        choices=["smoke", "normal", "deep"],
+        default=None,
+        help="Search mode: smoke (small, fast), normal (daily), deep (full). Default: normal.",
+    )
+    p.add_argument("--max-pages", type=int, default=None)
+    p.add_argument("--per-page", type=int, default=None)
+    p.add_argument("--profile", help="Use legacy search profile.")
+    p.add_argument("--preset", help="Use universal search preset.")
+    p.add_argument("--adhoc", action="store_true")
+    p.add_argument("--include", default=None)
+    p.add_argument("--exclude", default=None)
+    p.add_argument("--remote-only", action="store_true", default=None)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--force-details", action="store_true")
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("-y", "--yes", action="store_true")
+    p.set_defaults(func=search.command_search)
+
+
+def build_apply_pack_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("apply-pack")
+    p.add_argument("vacancy_id", nargs="?", help="Vacancy ID.")
+    p.add_argument("--top", type=int)
+    p.add_argument("--limit", type=int)
+    p.add_argument("--decision")
+    p.add_argument("--preset")
+    p.add_argument("--min-score", type=int, default=0)
+    p.add_argument("--lang", choices=["ru", "en"], default="ru")
+    p.add_argument("--format", choices=["md", "html", "both"], default="both")
+    p.add_argument("--save-review", action="store_true")
+    p.add_argument("--overwrite", action="store_true")
+    p.set_defaults(func=apply_pack.command_apply_pack)
+
+
+def build_autopilot_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("autopilot")
+    ps = p.add_subparsers(dest="autopilot_command", required=True)
+    d = ps.add_parser("daily")
+    d.add_argument("--mode", choices=["smoke", "normal"], default="normal")
+    d.add_argument("--preset")
+    d.add_argument("--skip-auth-check", action="store_true")
+    d.add_argument("--skip-search", action="store_true")
+    d.add_argument("--skip-rescore", action="store_true")
+    d.add_argument("--skip-export", action="store_true")
+    d.add_argument("--skip-queue", action="store_true")
+    d.add_argument("--queue-limit", type=int, default=20)
+    d.add_argument("--min-score", type=int, default=70)
+    d.add_argument("--backup-first", action="store_true")
+    d.add_argument("--allow-deep", action="store_true")
+    d.add_argument("--ignore-doctor-warnings", action="store_true")
+    d.add_argument("-y", "--yes", action="store_true")
+    d.set_defaults(func=autopilot.command_autopilot_daily)
+    s = ps.add_parser("status")
+    s.set_defaults(func=autopilot.command_autopilot_status)
+
+
+def build_analytics_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("analytics")
+    ps = p.add_subparsers(dest="analytics_command", required=True)
+    ps.add_parser("summary").set_defaults(func=analytics.command_analytics_summary)
+    ps.add_parser("skills").set_defaults(func=analytics.command_analytics_skills)
+    ps.add_parser("employers").set_defaults(func=analytics.command_analytics_employers)
+    ps.add_parser("salary").set_defaults(func=analytics.command_analytics_salary)
+    ps.add_parser("presets").set_defaults(func=analytics.command_analytics_presets)
+    ps.add_parser("funnel").set_defaults(func=analytics.command_analytics_funnel)
+    ps.add_parser("export").set_defaults(func=analytics.command_analytics_export)
+
+
+def build_score_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("score")
+    ps = p.add_subparsers(dest="score_command", required=True)
+    e = ps.add_parser("explain")
+    e.add_argument("vacancy_id")
+    e.set_defaults(func=score.command_score_explain)
+    r = ps.add_parser("rescore")
+    r.add_argument("--preset")
+    r.add_argument("--limit", type=int)
+    r.set_defaults(func=score.command_score_rescore)
+
+
+def build_presets_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("presets")
+    ps = p.add_subparsers(dest="presets_command", required=True)
+    ps.add_parser("list").set_defaults(func=presets.command_presets_list)
+    s = ps.add_parser("show")
+    s.add_argument("preset_name")
+    s.set_defaults(func=presets.command_presets_show)
+    ps.add_parser("validate").set_defaults(func=presets.command_presets_validate)
+    c = ps.add_parser("create")
+    c.add_argument("name")
+    c.add_argument("--terms", required=True)
+    c.add_argument("--include")
+    c.add_argument("--exclude")
+    c.add_argument("--description")
+    c.add_argument("--remote-only", action="store_true", default=True)
+    c.add_argument("--overwrite", action="store_true")
+    c.set_defaults(func=presets.command_presets_create)
+    cl = ps.add_parser("clone")
+    cl.add_argument("source")
+    cl.add_argument("new_name")
+    cl.add_argument("--overwrite", action="store_true")
+    cl.set_defaults(func=presets.command_presets_clone)
+    for name, fn in [
+        ("add-term", presets.command_presets_add_term),
+        ("remove-term", presets.command_presets_remove_term),
+        ("add-include", presets.command_presets_add_include),
+        ("add-exclude", presets.command_presets_add_exclude),
+    ]:
+        x = ps.add_parser(name)
+        x.add_argument("name")
+        x.add_argument("keyword" if "include" in name or "exclude" in name else "term")
+        x.set_defaults(func=fn)
+    for name, fn in [
+        ("disable", presets.command_presets_disable),
+        ("enable", presets.command_presets_enable),
+    ]:
+        x = ps.add_parser(name)
+        x.add_argument("name")
+        x.set_defaults(func=fn)
+    sa = ps.add_parser("save-adhoc")
+    sa.add_argument("name")
+    sa.add_argument("--include", required=True)
+    sa.add_argument("--exclude", default="")
+    sa.add_argument("--remote-only", action="store_true", default=True)
+    sa.add_argument("--overwrite", action="store_true")
+    sa.set_defaults(func=presets.command_presets_save_adhoc)
+
+
+def build_export_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("export")
+    p.add_argument("--min-score", type=int, default=0)
+    p.add_argument("--profile", default=None)
+    p.add_argument("--preset", default=None)
+    p.add_argument("--days", type=int)
+    p.set_defaults(func=export.command_export)
+
+
+def build_db_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("db")
+    ps = p.add_subparsers(dest="db_command", required=True)
+    ps.add_parser("info").set_defaults(func=db.command_db_info)
+    pu = ps.add_parser("purge-samples")
+    pu.add_argument("-y", "--yes", action="store_true")
+    pu.set_defaults(func=db.command_db_purge_samples)
+    ps.add_parser("backup").set_defaults(func=db.command_db_backup)
+
+
+def build_review_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("review")
+    ps = p.add_subparsers(dest="review_command", required=True)
+    rl = ps.add_parser("list")
+    rl.add_argument("--status", choices=sorted(REVIEW_STATUSES))
+    rl.add_argument("--min-score", type=int, default=0)
+    rl.add_argument("--limit", type=int, default=30)
+    rl.add_argument("--profile", default=None)
+    rl.add_argument("--preset", default=None)
+    rl.set_defaults(func=review.command_review_list)
+    for name, fn, args in [
+        (
+            "set",
+            review.command_review_set,
+            [
+                ("vacancy_id", {}),
+                ("--status", {"required": True, "choices": sorted(REVIEW_STATUSES)}),
+            ],
+        ),
+        ("note", review.command_review_note, [("vacancy_id", {}), ("--note", {"required": True})]),
+        (
+            "apply",
+            review.command_review_apply,
+            [("vacancy_id", {}), ("--date", {"default": "today"})],
+        ),
+        (
+            "next",
+            review.command_review_next,
+            [("vacancy_id", {}), ("--action", {"required": True}), ("--date", {"required": True})],
+        ),
+    ]:
+        x = ps.add_parser(name)
+        for arg_name, kwargs in args:
+            x.add_argument(arg_name, **kwargs)
+        x.set_defaults(func=fn)
+    # Queue
+    q = ps.add_parser("queue")
+    q.add_argument("--decision")
+    q.add_argument("--min-score", type=int, default=0)
+    q.add_argument("--preset")
+    q.add_argument("--profile", default=None)
+    q.add_argument("--status", choices=sorted(REVIEW_STATUSES))
+    q.add_argument("--limit", type=int, default=20)
+    q.add_argument("--remote-only", action="store_true")
+    q.add_argument("--with-salary", action="store_true")
+    q.add_argument("--hide-risk", action="store_true")
+    q.add_argument("--new-only", action="store_true")
+    q.set_defaults(func=review.command_review_queue)
+    ps.add_parser("next-best").set_defaults(func=review.command_review_next_best)
+    # Bulk
+    for name, fn, extra in [
+        (
+            "bulk-archive",
+            review.command_review_bulk_archive,
+            [("--decision", {"default": "auto_hide"})],
+        ),
+        (
+            "bulk-reject",
+            review.command_review_bulk_reject,
+            [("--max-score", {"type": int, "default": 35})],
+        ),
+        (
+            "bulk-interesting",
+            review.command_review_bulk_interesting,
+            [
+                ("--min-score", {"type": int, "default": 85}),
+                ("--decision", {"default": "strong_match"}),
+            ],
+        ),
+    ]:
+        b = ps.add_parser(name)
+        for a, kw in extra:
+            b.add_argument(a, **kw)
+        b.add_argument("--force", action="store_true")
+        b.add_argument("-y", "--yes", action="store_true")
+        b.set_defaults(func=fn)
+    bs = ps.add_parser("bulk-set")
+    bs.add_argument("--new-status", required=True, choices=sorted(REVIEW_STATUSES))
+    bs.add_argument("--min-score", type=int)
+    bs.add_argument("--max-score", type=int)
+    bs.add_argument("--decision")
+    bs.add_argument("--preset")
+    bs.add_argument("--status", choices=sorted(REVIEW_STATUSES))
+    bs.add_argument("--force", action="store_true")
+    bs.add_argument("-y", "--yes", action="store_true")
+    bs.set_defaults(func=review.command_review_bulk_set)
+
+
+def build_all_parsers(sub: argparse._SubParsersAction) -> None:
+    build_search_parser(sub)
+    build_apply_pack_parser(sub)
+    build_autopilot_parser(sub)
+    build_analytics_parser(sub)
+    build_score_parser(sub)
+    build_presets_parser(sub)
+    build_export_parser(sub)
+    build_db_parser(sub)
+    build_review_parser(sub)
+    # Simple parsers
+    sub.add_parser("top").set_defaults(func=stats.command_top)
+    sub.add_parser("stats").set_defaults(func=stats.command_stats)
+    sub.add_parser("auth-check").set_defaults(func=auth.command_auth_check)
+    sub.add_parser("doctor").set_defaults(func=doctor.command_doctor)
+    sub.add_parser("profiles").set_defaults(func=profiles.command_profiles)
+    sp = sub.add_parser("sample-export")
+    sp.add_argument("--db", default=None)
+    sp.set_defaults(func=sample.command_sample_export)
+    sub.add_parser("version").set_defaults(func=version_cmd.command_version)

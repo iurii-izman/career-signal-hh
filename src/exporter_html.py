@@ -18,13 +18,15 @@ def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
     total = len(rows)
     top_score = max((row.get("total_score") or 0 for row in rows), default=0)
     new_24h = sum(1 for row in rows if row.get("first_seen_at", "") >= _day_ago_iso())
-    remote = sum(
-        "remote" in json_loads(row.get("work_format_flags_json"), []) for row in rows
-    )
+    remote = sum("remote" in json_loads(row.get("work_format_flags_json"), []) for row in rows)
+    with_salary_count = sum(1 for row in rows if row.get("salary_from") or row.get("salary_to"))
     ai = sum((row.get("ai_automation_score") or 0) >= 15 for row in rows)
     bitrix = sum((row.get("bitrix_1c_score") or 0) >= 15 for row in rows)
     cards = []
     decisions_set: set[str] = set()
+    profiles_set: set[str] = set()
+    strong_count = 0
+    queue_count = 0
     for row in rows:
         reasons = json_loads(row.get("match_reasons_json"), [])
         risks = json_loads(row.get("risk_flags_json"), [])
@@ -33,6 +35,15 @@ def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
         decision = row.get("decision") or ""
         if decision:
             decisions_set.add(decision)
+            if decision == "strong_match":
+                strong_count += 1
+            elif decision == "queue":
+                queue_count += 1
+        profile = row.get("best_profile") or ""
+        preset = row.get("preset_name") or ""
+        for p in (profile, preset):
+            if p:
+                profiles_set.add(p)
         salary = salary_to_str(
             row.get("salary_from"), row.get("salary_to"), row.get("salary_currency")
         )
@@ -49,9 +60,7 @@ def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
         ).casefold()
         review_status = row.get("review_status") or "new"
         priority = (
-            f" · Priority: {_e(row.get('priority'))}"
-            if row.get("priority") is not None
-            else ""
+            f" · Priority: {_e(row.get('priority'))}" if row.get("priority") is not None else ""
         )
         notes = (
             f'<div class="review-note"><strong>Заметка:</strong> '
@@ -60,9 +69,7 @@ def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
             else ""
         )
         applied = (
-            f"<span>Отклик: {_e(row.get('applied_at'))}</span>"
-            if row.get("applied_at")
-            else ""
+            f"<span>Отклик: {_e(row.get('applied_at'))}</span>" if row.get("applied_at") else ""
         )
         next_action = (
             f"<span>Следующее действие: {_e(row.get('next_action'))}"
@@ -114,9 +121,9 @@ input,select{{background:#0e1527;color:var(--text);border:1px solid var(--line);
 .review-note{{margin-top:8px;padding:8px 10px;background:#10182a;border-left:3px solid #67e8f9;color:#d7e0ee}}
 p{{color:#cbd5e1;line-height:1.5}} @media(max-width:800px){{.summary{{grid-template-columns:repeat(2,1fr)}} main{{padding:14px}}}}
 </style></head><body><main><h1>CareerSignal HH</h1>
-<section class="summary">{"".join(f"<div><strong>{v}</strong><span>{k}</span></div>" for k, v in [("Всего", total), ("Top score", top_score), ("Новые 24ч", new_24h), ("Remote", remote), ("AI matches", ai), ("Bitrix/1C", bitrix)])}</section>
+<section class="summary">{"".join(f"<div><strong>{v}</strong><span>{k}</span></div>" for k, v in [("Всего", total), ("Top score", top_score), ("Новые 24ч", new_24h), ("Remote", remote), ("Strong", strong_count), ("Queue", queue_count), ("С зарплатой", with_salary_count)])}</section>
 <section class="filters"><input id="q" placeholder="Поиск"><input id="min" type="number" min="0" max="100" value="0" placeholder="Min score">
-<select id="profile"><option value="">Все профили</option><option>ai_automation</option><option>bitrix_1c</option><option>mixed</option><option>low_match</option></select>
+<select id="profile"><option value="">Все профили</option>{"".join(f"<option>{p}</option>" for p in sorted(profiles_set)) if profiles_set else "<option>ai_automation</option><option>bitrix_1c</option>"}</select>
 <select id="decision"><option value="">Все decisions</option>{"".join(f"<option>{d}</option>" for d in sorted(decisions_set)) if decisions_set else ""}</select>
 <select id="review"><option value="">Все review status</option><option>new</option><option>interesting</option><option>maybe</option><option>rejected</option><option>applied</option><option>interview</option><option>offer</option><option>archived</option></select>
 <label><input id="remote" type="checkbox"> Только remote</label><label><input id="salary" type="checkbox"> С зарплатой</label>

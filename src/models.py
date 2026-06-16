@@ -35,17 +35,13 @@ class Vacancy(BaseModel):
     snippet_responsibility: str = ""
 
     @classmethod
-    def from_hh(
-        cls, data: dict[str, Any], source_profile: str | None = None
-    ) -> "Vacancy":
+    def from_hh(cls, data: dict[str, Any], source_profile: str | None = None) -> "Vacancy":
         now = datetime.now(timezone.utc).isoformat()
         salary = data.get("salary") or {}
         description = data.get("description") or ""
         snippet = data.get("snippet") or {}
         skills = [
-            item.get("name", "")
-            for item in (data.get("key_skills") or [])
-            if item.get("name")
+            item.get("name", "") for item in (data.get("key_skills") or []) if item.get("name")
         ]
         return cls(
             id=str(data.get("id", "")),
@@ -103,5 +99,6 @@ class ScoreDetails(BaseModel):
     matched_keywords: list[KeywordHit] = Field(default_factory=list)
     excluded_keywords: list[KeywordHit] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
+    work_format_flags: list[str] = Field(default_factory=list)
     explanation: dict[str, Any] = Field(default_factory=dict)
     scored_at: str

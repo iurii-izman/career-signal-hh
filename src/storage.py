@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS score_details (
     matched_keywords_json TEXT NOT NULL,
     excluded_keywords_json TEXT NOT NULL,
     risk_flags_json TEXT NOT NULL,
+    work_format_flags_json TEXT NOT NULL DEFAULT '[]',
     explanation_json TEXT NOT NULL,
     scored_at TEXT NOT NULL,
     FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
@@ -107,6 +108,7 @@ class Storage:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
         self.ensure_review_schema()
+        self._ensure_score_details_work_format()
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -117,6 +119,15 @@ class Storage:
             connection.commit()
         finally:
             connection.close()
+
+    def _ensure_score_details_work_format(self) -> None:
+        """Add work_format_flags_json column if missing (migration-safe)."""
+        with self.connect() as connection:
+            cols = [r[1] for r in connection.execute("PRAGMA table_info(score_details)").fetchall()]
+            if "work_format_flags_json" not in cols:
+                connection.execute(
+                    "ALTER TABLE score_details ADD COLUMN work_format_flags_json TEXT NOT NULL DEFAULT '[]'"
+                )
 
     def ensure_review_schema(self) -> None:
         with self.connect() as connection:
@@ -147,9 +158,7 @@ class Storage:
         normalized = status.strip().lower()
         if normalized not in REVIEW_STATUSES:
             allowed = ", ".join(sorted(REVIEW_STATUSES))
-            raise ValueError(
-                f"Недопустимый review status={status!r}. Допустимы: {allowed}."
-            )
+            raise ValueError(f"Недопустимый review status={status!r}. Допустимы: {allowed}.")
         return normalized
 
     def get_review(self, vacancy_id: str) -> dict[str, Any]:
@@ -216,12 +225,8 @@ class Storage:
     def mark_applied(self, vacancy_id: str, applied_at: str) -> dict[str, Any]:
         return self.upsert_review(vacancy_id, status="applied", applied_at=applied_at)
 
-    def set_next_action(
-        self, vacancy_id: str, action: str, next_action_at: str
-    ) -> dict[str, Any]:
-        return self.upsert_review(
-            vacancy_id, next_action=action, next_action_at=next_action_at
-        )
+    def set_next_action(self, vacancy_id: str, action: str, next_action_at: str) -> dict[str, Any]:
+        return self.upsert_review(vacancy_id, next_action=action, next_action_at=next_action_at)
 
     def vacancy_exists(self, vacancy_id: str) -> bool:
         with self.connect() as connection:
@@ -325,9 +330,7 @@ class Storage:
         values["work_format_flags_json"] = json_dumps(values.pop("work_format_flags"))
         columns = list(values)
         updates = ", ".join(
-            f"{column}=excluded.{column}"
-            for column in columns
-            if column != "vacancy_id"
+            f"{column}=excluded.{column}" for column in columns if column != "vacancy_id"
         )
         with self.connect() as connection:
             connection.execute(
@@ -355,9 +358,7 @@ class Storage:
         values["explanation_json"] = json_dumps(values.pop("explanation"))
         columns = list(values)
         updates = ", ".join(
-            f"{column}=excluded.{column}"
-            for column in columns
-            if column != "vacancy_id"
+            f"{column}=excluded.{column}" for column in columns if column != "vacancy_id"
         )
         with self.connect() as connection:
             connection.execute(
@@ -381,6 +382,25 @@ class Storage:
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_vacancy_full(self, vacancy_id: str) -> dict[str, Any] | None:
+        """Return vacancy with scores, score_details, and review joined."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT v.*, s.total_score, s.best_profile, s.risk_flags_json,
+                   s.match_reasons_json, s.work_format_flags_json,
+                   sd.decision, sd.preset_name, sd.matched_keywords_json,
+                   sd.excluded_keywords_json, sd.category_scores_json,
+                   COALESCE(r.status, 'new') review_status,
+                   r.priority, r.user_notes, r.applied_at
+                FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                WHERE v.id = ?""",
+                (vacancy_id,),
             ).fetchone()
         return dict(row) if row else None
 
@@ -655,9 +675,7 @@ class Storage:
             # Count protected
             if not force and protected:
                 p_placeholders = ", ".join("?" for _ in protected)
-                protected_where = where + [
-                    f"COALESCE(r.status, 'new') IN ({p_placeholders})"
-                ]
+                protected_where = where + [f"COALESCE(r.status, 'new') IN ({p_placeholders})"]
                 protected_params = params + list(protected)
                 protected_sql = f"""
                     SELECT COUNT(*) FROM vacancies v
@@ -666,9 +684,7 @@ class Storage:
                     LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
                     WHERE {" AND ".join(protected_where)}
                 """
-                skipped = connection.execute(
-                    protected_sql, protected_params
-                ).fetchone()[0]
+                skipped = connection.execute(protected_sql, protected_params).fetchone()[0]
             else:
                 skipped = 0
 
@@ -677,9 +693,7 @@ class Storage:
             update_params_list: list[Any] = [normalized_new, now] + list(params)
             if not force and protected:
                 p_placeholders = ", ".join("?" for _ in protected)
-                update_where.append(
-                    f"COALESCE(r.status, 'new') NOT IN ({p_placeholders})"
-                )
+                update_where.append(f"COALESCE(r.status, 'new') NOT IN ({p_placeholders})")
                 update_params_list.extend(protected)
 
             set_clause = "status = ?, updated_at = ?"

@@ -67,9 +67,7 @@ def _generate_md(
     area = vacancy.get("area_name", "?")
     url = vacancy.get("alternate_url", "")
     vid = vacancy.get("id", "")
-    preset = vacancy.get("best_profile") or (
-        details.get("preset_name") if details else ""
-    )
+    preset = vacancy.get("best_profile") or (details.get("preset_name") if details else "")
 
     total_score = (
         details.get("total_score", vacancy.get("total_score", 0))
@@ -211,14 +209,10 @@ def _find_snippet(desc: str, keyword: str) -> str:
     return desc[start:end].strip()
 
 
-def _risk_bullets(
-    excluded: list[dict], risks: list[str], vacancy: dict, lang: str
-) -> str:
+def _risk_bullets(excluded: list[dict], risks: list[str], vacancy: dict, lang: str) -> str:
     lines = []
     for kw in excluded[:5]:
-        lines.append(
-            f"- ⚠️ Excluded: **{kw.get('keyword', '')}** ({kw.get('field', '')})"
-        )
+        lines.append(f"- ⚠️ Excluded: **{kw.get('keyword', '')}** ({kw.get('field', '')})")
     for r in risks[:3]:
         lines.append(f"- ⚠️ Risk: {r}")
     salary = vacancy.get("salary_from") or vacancy.get("salary_to")
@@ -252,22 +246,16 @@ def _fmt_salary(vacancy: dict, lang: str = "ru") -> str:
 def _generate_html(md_content: str, title: str) -> str:
     # Simple converter: headings, bold, lists, links, code
     html_content = md_content
-    html_content = re.sub(
-        r"^### (.+)", r"<h3>\1</h3>", html_content, flags=re.MULTILINE
-    )
+    html_content = re.sub(r"^### (.+)", r"<h3>\1</h3>", html_content, flags=re.MULTILINE)
     html_content = re.sub(r"^## (.+)", r"<h2>\1</h2>", html_content, flags=re.MULTILINE)
     html_content = re.sub(r"^# (.+)", r"<h1>\1</h1>", html_content, flags=re.MULTILINE)
     html_content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", html_content)
     html_content = re.sub(r"`([^`]+)`", r"<code>\1</code>", html_content)
     html_content = re.sub(r"^- (.+)", r"<li>\1</li>", html_content, flags=re.MULTILINE)
-    html_content = re.sub(
-        r"(\[([^\]]+)\]\(([^)]+)\))", r'<a href="\3">\2</a>', html_content
-    )
+    html_content = re.sub(r"(\[([^\]]+)\]\(([^)]+)\))", r'<a href="\3">\2</a>', html_content)
     html_content = html_content.replace("\n\n", "</p><p>")
     html_content = f"<p>{html_content}</p>"
-    html_content = html_content.replace("<p><li>", "<ul><li>").replace(
-        "</li></p>", "</li></ul>"
-    )
+    html_content = html_content.replace("<p><li>", "<ul><li>").replace("</li></p>", "</li></ul>")
     html_content = html_content.replace("<p><h", "<h").replace("</h", "</h")
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -283,9 +271,7 @@ ul{{padding-left:20px}} li{{margin:4px 0}} a{{color:#67e8f9}}
 </body></html>"""
 
 
-def _write_pack(
-    vacancy: dict, details: dict | None, lang: str, fmt: str, out_dir: Path
-) -> Path:
+def _write_pack(vacancy: dict, details: dict | None, lang: str, fmt: str, out_dir: Path) -> Path:
     name = vacancy.get("name", "vacancy")
     vid = vacancy.get("id", "")
     slug = _slug(name)
@@ -323,19 +309,10 @@ def command_apply_pack(args: argparse.Namespace) -> int:
     vacancies: list[dict[str, Any]] = []
 
     if args.vacancy_id:
-        row = storage.get_vacancy(args.vacancy_id)
+        row = storage.get_vacancy_full(args.vacancy_id)
         if not row:
             console.print(f"[red]Vacancy '{args.vacancy_id}' not found.[/red]")
             return 1
-        # Also get score details
-        details = storage.get_score_details(args.vacancy_id)
-        # Get scores for best_profile
-        scores = storage.list_vacancies(limit=1)
-        for s in scores:
-            if s["id"] == args.vacancy_id:
-                row["total_score"] = s.get("total_score", 0)
-                row["best_profile"] = s.get("best_profile", "")
-                break
         vacancies = [row]
     elif args.top or args.limit:
         limit = args.top or args.limit or 10
@@ -371,9 +348,7 @@ def command_apply_pack(args: argparse.Namespace) -> int:
                 saved_drafts += 1
 
     if saved_drafts:
-        console.print(
-            f"[green]Saved {saved_drafts} cover letter drafts to review.[/green]"
-        )
+        console.print(f"[green]Saved {saved_drafts} cover letter drafts to review.[/green]")
 
     # Generate index if multiple
     if len(vacancies) > 1:

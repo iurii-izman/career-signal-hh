@@ -31,25 +31,20 @@ def _check_auth_light() -> tuple[bool, str]:
 def _doctor_ok() -> tuple[bool, list[str]]:
     """Run quick local checks without network."""
     errors: list[str] = []
-    for path_str in [
-        "config/search_presets.yaml",
-        "config/scoring_rules.yaml",
-        "config/search_profiles.yaml",
-    ]:
+    for path_str in ["config/search_presets.yaml", "config/search_profiles.yaml"]:
         if not Path(path_str).exists():
             errors.append(f"MISSING: {path_str}")
+    # DB check: warn if missing, but don't fail — Storage creates it on demand
     db_path = os.getenv("DB_PATH", "data/vacancies.sqlite")
     if not Path(db_path).exists():
-        errors.append(f"DB not found: {db_path}")
-    return len(errors) == 0, errors
+        errors.append(f"DB not found: {db_path} (will be created on first use)")
+    return len(errors) == 0 or all("will be created" in e for e in errors), errors
 
 
 def command_autopilot_daily(args: argparse.Namespace) -> int:
     mode = args.mode or "normal"
     if mode == "deep" and not args.allow_deep:
-        console.print(
-            "[red]Refusing deep mode in autopilot. Use --allow-deep to override.[/red]"
-        )
+        console.print("[red]Refusing deep mode in autopilot. Use --allow-deep to override.[/red]")
         return 1
     if mode not in ("smoke", "normal"):
         console.print(f"[red]Invalid mode: {mode}. Use smoke or normal.[/red]")
@@ -132,9 +127,7 @@ def command_autopilot_daily(args: argparse.Namespace) -> int:
         from .export import command_export
 
         console.print("[bold]Running export...[/bold]")
-        export_args = argparse.Namespace(
-            min_score=0, profile=None, preset=None, days=None
-        )
+        export_args = argparse.Namespace(min_score=0, profile=None, preset=None, days=None)
         try:
             command_export(export_args)
         except Exception as exc:
@@ -145,9 +138,7 @@ def command_autopilot_daily(args: argparse.Namespace) -> int:
     if not args.skip_queue:
         from .review import command_review_queue
 
-        console.print(
-            f"[bold]Review queue (score≥{args.min_score}, new only)...[/bold]"
-        )
+        console.print(f"[bold]Review queue (score≥{args.min_score}, new only)...[/bold]")
         queue_args = argparse.Namespace(
             decision="strong_match,queue",
             min_score=args.min_score,

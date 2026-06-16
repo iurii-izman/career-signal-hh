@@ -56,13 +56,34 @@ def export_csv(rows: list[dict[str, Any]], path: str | Path) -> None:
         output.writeheader()
         for row in rows:
             item = dict(row)
-            item["match_reasons"] = "; ".join(
-                json_loads(row.get("match_reasons_json"), [])
-            )
+            item["match_reasons"] = "; ".join(json_loads(row.get("match_reasons_json"), []))
             item["risk_flags"] = "; ".join(json_loads(row.get("risk_flags_json"), []))
+            # v2 fields
+            item["matched_keywords"] = _fmt_keywords(row.get("matched_keywords_json"))
+            item["excluded_keywords"] = _fmt_keywords(row.get("excluded_keywords_json"))
+            item["category_scores"] = _fmt_json_obj(row.get("category_scores_json"))
             output.writerow(item)
 
     _atomic_write(Path(path), write)
+
+
+def _fmt_keywords(raw: str | None) -> str:
+    items = json_loads(raw, [])
+    if not items:
+        return ""
+    return "; ".join(
+        f"{kw.get('keyword', '')}:{kw.get('field', '')}({kw.get('weight', '')})"
+        for kw in items[:10]
+    )
+
+
+def _fmt_json_obj(raw: str | None) -> str:
+    data = json_loads(raw, {})
+    if not data:
+        return ""
+    import json
+
+    return json.dumps(data, ensure_ascii=False)
 
 
 def export_jsonl(rows: list[dict[str, Any]], path: str | Path) -> None:
@@ -72,9 +93,7 @@ def export_jsonl(rows: list[dict[str, Any]], path: str | Path) -> None:
             item["key_skills"] = json_loads(item.pop("key_skills_json", None), [])
             item["match_reasons"] = json_loads(item.pop("match_reasons_json", None), [])
             item["risk_flags"] = json_loads(item.pop("risk_flags_json", None), [])
-            item["work_format_flags"] = json_loads(
-                item.pop("work_format_flags_json", None), []
-            )
+            item["work_format_flags"] = json_loads(item.pop("work_format_flags_json", None), [])
             item.pop("raw_json", None)
             handle.write(json.dumps(item, ensure_ascii=False) + "\n")
 
