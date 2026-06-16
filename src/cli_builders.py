@@ -18,6 +18,7 @@ from .commands import (
     export,
     presets,
     profiles,
+    quality,
     review,
     sample,
     score,
@@ -285,6 +286,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_db_parser(sub)
     build_review_parser(sub)
     build_calibrate_parser(sub)
+    build_quality_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -311,3 +313,12 @@ def build_calibrate_parser(sub: argparse._SubParsersAction) -> None:
     a.add_argument("-y", "--yes", action="store_true")
     a.set_defaults(func=calibrate.command_calibrate_apply)
     ps.add_parser("export").set_defaults(func=calibrate.command_calibrate_export)
+
+
+def build_quality_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("quality")
+    ps = p.add_subparsers(dest="quality_command", required=True)
+    ps.add_parser("duplicates").set_defaults(func=quality.command_quality_duplicates)
+    ps.add_parser("cluster").set_defaults(func=quality.command_quality_cluster)
+    ps.add_parser("report").set_defaults(func=quality.command_quality_report)
+    ps.add_parser("export").set_defaults(func=quality.command_quality_export)
