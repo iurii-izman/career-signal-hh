@@ -432,11 +432,15 @@ class Storage:
             SELECT v.*, s.total_score, s.ai_automation_score, s.bitrix_1c_score,
                    s.best_profile, s.match_reasons_json, s.risk_flags_json,
                    s.work_format_flags_json, s.scored_at,
+                   sd.decision, sd.preset_name,
+                   sd.category_scores_json, sd.matched_keywords_json,
+                   sd.excluded_keywords_json,
                    COALESCE(r.status, 'new') review_status,
                    r.priority, r.user_notes, r.cover_letter_draft,
                    r.applied_at, r.next_action, r.next_action_at,
                    r.updated_at review_updated_at
             FROM vacancies v LEFT JOIN scores s ON s.vacancy_id = v.id
+            LEFT JOIN score_details sd ON sd.vacancy_id = v.id
             LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
             WHERE {" AND ".join(where)}
             ORDER BY COALESCE(s.total_score, 0) DESC, v.published_at DESC

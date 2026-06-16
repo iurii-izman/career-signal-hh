@@ -17,19 +17,22 @@ def _e(value: Any) -> str:
 def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
     total = len(rows)
     top_score = max((row.get("total_score") or 0 for row in rows), default=0)
-    new_24h = sum(
-        1 for row in rows if row.get("first_seen_at", "") >= _day_ago_iso()
-    )
+    new_24h = sum(1 for row in rows if row.get("first_seen_at", "") >= _day_ago_iso())
     remote = sum(
         "remote" in json_loads(row.get("work_format_flags_json"), []) for row in rows
     )
     ai = sum((row.get("ai_automation_score") or 0) >= 15 for row in rows)
     bitrix = sum((row.get("bitrix_1c_score") or 0) >= 15 for row in rows)
     cards = []
+    decisions_set: set[str] = set()
     for row in rows:
         reasons = json_loads(row.get("match_reasons_json"), [])
         risks = json_loads(row.get("risk_flags_json"), [])
         work = json_loads(row.get("work_format_flags_json"), [])
+        matched = json_loads(row.get("matched_keywords_json"), [])
+        decision = row.get("decision") or ""
+        if decision:
+            decisions_set.add(decision)
         salary = salary_to_str(
             row.get("salary_from"), row.get("salary_to"), row.get("salary_currency")
         )
@@ -52,40 +55,41 @@ def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
         )
         notes = (
             f'<div class="review-note"><strong>Заметка:</strong> '
-            f'{_e(truncate(row.get("user_notes"), 220))}</div>'
+            f"{_e(truncate(row.get('user_notes'), 220))}</div>"
             if row.get("user_notes")
             else ""
         )
         applied = (
-            f'<span>Отклик: {_e(row.get("applied_at"))}</span>'
+            f"<span>Отклик: {_e(row.get('applied_at'))}</span>"
             if row.get("applied_at")
             else ""
         )
         next_action = (
-            f'<span>Следующее действие: {_e(row.get("next_action"))}'
-            f' · {_e(row.get("next_action_at"))}</span>'
+            f"<span>Следующее действие: {_e(row.get('next_action'))}"
+            f" · {_e(row.get('next_action_at'))}</span>"
             if row.get("next_action")
             else ""
         )
         cards.append(f"""
-<article class="vacancy" data-score="{row.get('total_score') or 0}"
- data-profile="{_e(row.get('best_profile'))}" data-remote="{str('remote' in work).lower()}"
- data-review="{_e(review_status)}"
- data-salary="{str(row.get('salary_from') is not None or row.get('salary_to') is not None).lower()}"
+<article class="vacancy" data-score="{row.get("total_score") or 0}"
+ data-profile="{_e(row.get("best_profile"))}" data-remote="{str("remote" in work).lower()}"
+ data-review="{_e(review_status)}" data-decision="{_e(decision)}"
+ data-salary="{str(row.get("salary_from") is not None or row.get("salary_to") is not None).lower()}"
  data-search="{_e(search)}">
- <div class="score">{row.get('total_score') or 0}</div>
+ <div class="score">{row.get("total_score") or 0}</div>
  <div class="body">
-  <div class="heading"><span class="badge">{_e(row.get('best_profile'))}</span>
+  <div class="heading"><span class="badge">{_e(row.get("best_profile"))}</span>
+   {f'<span class="badge decision">{_e(decision)}</span>' if decision else ""}
    <span class="review-status status-{_e(review_status)}">{_e(review_status)}</span>
-   <a href="{_e(row.get('alternate_url'))}" target="_blank" rel="noopener">{_e(row.get('name'))}</a></div>
-  <div class="meta">{_e(row.get('employer_name'))} · {_e(row.get('area_name'))} · {_e(salary)}</div>
-  <div class="meta">{_e(row.get('schedule_name'))} · {_e(row.get('employment_name'))} · {_e(row.get('experience_name'))} · {_e((row.get('published_at') or '')[:10])}</div>
+   <a href="{_e(row.get("alternate_url"))}" target="_blank" rel="noopener">{_e(row.get("name"))}</a></div>
+  <div class="meta">{_e(row.get("employer_name"))} · {_e(row.get("area_name"))} · {_e(salary)}</div>
+  <div class="meta">{_e(row.get("schedule_name"))} · {_e(row.get("employment_name"))} · {_e(row.get("experience_name"))} · {_e((row.get("published_at") or "")[:10])}</div>
   <div class="review-meta">Review: {_e(review_status)}{priority} {applied} {next_action}</div>
   {notes}
-  <p>{_e(truncate(row.get('description_text'), 300))}</p>
-  <div class="tags">{''.join(f'<span>{_e(x)}</span>' for x in reasons)}</div>
-  <div class="risks">{''.join(f'<span>{_e(x)}</span>' for x in risks)}</div>
-  <small>Источник: {_e(row.get('source_profile'))}</small>
+  <p>{_e(truncate(row.get("description_text"), 300))}</p>
+  <div class="tags">{"".join(f"<span>{_e(x)}</span>" for x in reasons)}{"".join(f"<span>{_e(kw.get("keyword", ""))} {kw.get("field", "")}</span>" for kw in matched[:5])}</div>
+  <div class="risks">{"".join(f"<span>{_e(x)}</span>" for x in risks)}</div>
+  <small>ID: {_e(row.get("id"))} | copy: python -m src.main review set {_e(row.get("id"))} --status interesting</small>
  </div>
 </article>""")
     document = f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
@@ -110,20 +114,24 @@ input,select{{background:#0e1527;color:var(--text);border:1px solid var(--line);
 .review-note{{margin-top:8px;padding:8px 10px;background:#10182a;border-left:3px solid #67e8f9;color:#d7e0ee}}
 p{{color:#cbd5e1;line-height:1.5}} @media(max-width:800px){{.summary{{grid-template-columns:repeat(2,1fr)}} main{{padding:14px}}}}
 </style></head><body><main><h1>CareerSignal HH</h1>
-<section class="summary">{''.join(f'<div><strong>{v}</strong><span>{k}</span></div>' for k,v in [('Всего',total),('Top score',top_score),('Новые 24ч',new_24h),('Remote',remote),('AI matches',ai),('Bitrix/1C',bitrix)])}</section>
+<section class="summary">{"".join(f"<div><strong>{v}</strong><span>{k}</span></div>" for k, v in [("Всего", total), ("Top score", top_score), ("Новые 24ч", new_24h), ("Remote", remote), ("AI matches", ai), ("Bitrix/1C", bitrix)])}</section>
 <section class="filters"><input id="q" placeholder="Поиск"><input id="min" type="number" min="0" max="100" value="0" placeholder="Min score">
 <select id="profile"><option value="">Все профили</option><option>ai_automation</option><option>bitrix_1c</option><option>mixed</option><option>low_match</option></select>
+<select id="decision"><option value="">Все decisions</option>{"".join(f"<option>{d}</option>" for d in sorted(decisions_set)) if decisions_set else ""}</select>
 <select id="review"><option value="">Все review status</option><option>new</option><option>interesting</option><option>maybe</option><option>rejected</option><option>applied</option><option>interview</option><option>offer</option><option>archived</option></select>
 <label><input id="remote" type="checkbox"> Только remote</label><label><input id="salary" type="checkbox"> С зарплатой</label>
-<label><input id="low" type="checkbox"> Скрыть low match</label></section>
-<section id="list">{''.join(cards)}</section></main><script>
-const controls=[q,min,profile,review,remote,salary,low];function filter(){{
+<label><input id="low" type="checkbox"> Скрыть low match</label>
+<label><input id="hide_rejected" type="checkbox"> Скрыть rejected/archived</label></section>
+<section id="list">{"".join(cards)}</section></main><script>
+const controls=[q,min,profile,decision,review,remote,salary,low,hide_rejected];function filter(){{
  const text=q.value.toLowerCase(), threshold=Number(min.value||0);
  document.querySelectorAll('.vacancy').forEach(v=>{{
   const show=v.dataset.search.includes(text)&&Number(v.dataset.score)>=threshold&&
    (!profile.value||v.dataset.profile===profile.value)&&(!review.value||v.dataset.review===review.value)&&
+   (!decision.value||v.dataset.decision===decision.value)&&
    (!remote.checked||v.dataset.remote==='true')&&
-   (!salary.checked||v.dataset.salary==='true')&&(!low.checked||v.dataset.profile!=='low_match');
+   (!salary.checked||v.dataset.salary==='true')&&(!low.checked||v.dataset.profile!=='low_match')&&
+   (!hide_rejected.checked||(v.dataset.review!=='rejected'&&v.dataset.review!=='archived'));
   v.hidden=!show;
  }});
 }} controls.forEach(c=>c.addEventListener('input',filter));
@@ -140,4 +148,5 @@ const controls=[q,min,profile,review,remote,salary,low];function filter(){{
 
 def _day_ago_iso() -> str:
     from datetime import datetime, timedelta, timezone
+
     return (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
