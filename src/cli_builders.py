@@ -13,6 +13,7 @@ from .commands import (
     auth,
     autopilot,
     calibrate,
+    cockpit,
     db,
     doctor,
     export,
@@ -287,6 +288,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_review_parser(sub)
     build_calibrate_parser(sub)
     build_quality_parser(sub)
+    build_cockpit_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -322,3 +324,10 @@ def build_quality_parser(sub: argparse._SubParsersAction) -> None:
     ps.add_parser("cluster").set_defaults(func=quality.command_quality_cluster)
     ps.add_parser("report").set_defaults(func=quality.command_quality_report)
     ps.add_parser("export").set_defaults(func=quality.command_quality_export)
+
+
+def build_cockpit_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("cockpit")
+    ps = p.add_subparsers(dest="cockpit_command", required=True)
+    ps.add_parser("export").set_defaults(func=cockpit.command_cockpit_export)
+    ps.add_parser("open").set_defaults(func=cockpit.command_cockpit_open)
