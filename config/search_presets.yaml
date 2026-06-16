@@ -1,7 +1,8 @@
 defaults:
   remote_only: true
   areas: []
-  schedule: [remote]
+  schedule:
+  - remote
   experience: []
   salary_as_bonus: true
   language_priority: equal
@@ -10,104 +11,108 @@ defaults:
     queue: 70
     review_later: 50
     weak_match: 25
-
 presets:
   ai_rag_remote:
     enabled: true
-    description: "Remote AI / LLM / RAG roles"
+    description: Remote AI / LLM / RAG roles
     search_terms:
-      - "LLM Engineer"
-      - "RAG Engineer"
-      - "AI Automation Engineer"
-      - "AI Engineer Python"
+    - LLM Engineer
+    - RAG Engineer
+    - AI Automation Engineer
+    - AI Engineer Python
     filters:
       remote_only: true
       areas: []
-      schedule: [remote]
-      experience: [between3And6, moreThan6]
+      schedule:
+      - remote
+      experience:
+      - between3And6
+      - moreThan6
     include:
       any:
-        - "llm"
-        - "rag"
-        - "python"
-        - "fastapi"
-        - "langchain"
-        - "langgraph"
-        - "n8n"
+      - llm
+      - rag
+      - python
+      - fastapi
+      - langchain
+      - langgraph
+      - n8n
       all: []
     exclude:
       any:
-        - "qa automation"
-        - "casino"
-        - "gambling"
-        - "cold calls"
+      - qa automation
+      - casino
+      - gambling
+      - cold calls
       title:
-        - "qa engineer"
-        - "sales manager"
+      - qa engineer
+      - sales manager
     boost:
       title:
-        "llm": 20
-        "rag": 20
-        "ai engineer": 18
-        "automation": 10
+        llm: 20
+        rag: 20
+        ai engineer: 18
+        automation: 10
       skills:
-        "python": 12
-        "fastapi": 8
-        "rag": 12
+        python: 12
+        fastapi: 8
+        rag: 12
       description:
-        "api integration": 8
-        "business process automation": 8
+        api integration: 8
+        business process automation: 8
     penalties:
       title:
-        "qa engineer": 35
-        "sales manager": 40
+        qa engineer: 35
+        sales manager: 40
       description:
-        "onsite only": 40
-        "cold calls": 35
-
+        onsite only: 40
+        cold calls: 35
   bitrix24_crm_remote:
     enabled: true
-    description: "Remote Bitrix24 / CRM / 1C roles"
+    description: Remote Bitrix24 / CRM / 1C roles
     search_terms:
-      - "Битрикс24"
-      - "Bitrix24"
-      - "CRM аналитик"
-      - "Интегратор Битрикс24"
-      - "1С CRM"
+    - Битрикс24
+    - Bitrix24
+    - CRM аналитик
+    - Интегратор Битрикс24
+    - 1С CRM
     filters:
       remote_only: true
       areas: []
-      schedule: [remote]
-      experience: [between3And6, moreThan6]
+      schedule:
+      - remote
+      experience:
+      - between3And6
+      - moreThan6
     include:
       any:
-        - "битрикс24"
-        - "bitrix24"
-        - "crm"
-        - "1с"
-        - "бизнес-процесс"
-        - "интеграции"
+      - битрикс24
+      - bitrix24
+      - crm
+      - 1с
+      - бизнес-процесс
+      - интеграции
       all: []
     exclude:
       any:
-        - "оператор call-центра"
-        - "холодные звонки"
+      - оператор call-центра
+      - холодные звонки
       title:
-        - "менеджер по продажам"
+      - менеджер по продажам
     boost:
       title:
-        "битрикс24": 20
-        "crm": 12
-        "1с": 14
+        битрикс24: 20
+        crm: 12
+        1с: 14
       skills:
-        "битрикс24": 14
-        "crm": 10
+        битрикс24: 14
+        crm: 10
       description:
-        "смарт-процессы": 10
-        "бизнес-процессы": 10
-        "интеграции с 1с": 15
+        смарт-процессы: 10
+        бизнес-процессы: 10
+        интеграции с 1с: 15
     penalties:
       title:
-        "менеджер по продажам": 40
+        менеджер по продажам: 40
       description:
-        "холодные звонки": 35
+        холодные звонки: 35

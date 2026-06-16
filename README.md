@@ -198,6 +198,37 @@ python -m src.main presets list
 python -m src.main presets show ai_rag_remote
 ```
 
+### Управление пресетами
+
+```powershell
+# Создать новый пресет
+python -m src.main presets create my-preset --terms "Python,AI,LLM" --include "python,ai,llm" --exclude "qa,gambling"
+
+# Клонировать
+python -m src.main presets clone ai_rag_remote my-copy
+
+# Добавить/удалить поисковый термин
+python -m src.main presets add-term my-preset "RAG Engineer"
+python -m src.main presets remove-term my-preset "Python"
+
+# Добавить include/exclude ключевые слова
+python -m src.main presets add-include my-preset "fastapi"
+python -m src.main presets add-exclude my-preset "onsite"
+
+# Включить/выключить
+python -m src.main presets disable my-preset
+python -m src.main presets enable my-preset
+
+# Сохранить adhoc поиск как пресет
+python -m src.main presets save-adhoc my-preset --include "RAG,LLM,Python" --exclude "QA,casino"
+
+# Проверить конфигурацию
+python -m src.main presets validate
+```
+
+Все операции создают бэкап в `config/backups/search_presets_*.yaml`.
+Операции идемпотентны: повторное добавление не дублирует записи.
+
 ### Поиск по пресету
 
 ```powershell

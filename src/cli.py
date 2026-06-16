@@ -17,7 +17,20 @@ from .commands.autopilot import command_autopilot_daily, command_autopilot_statu
 from .commands.db import command_db_backup, command_db_info, command_db_purge_samples
 from .commands.doctor import command_doctor
 from .commands.export import command_export
-from .commands.presets import command_presets_list, command_presets_show
+from .commands.presets import (
+    command_presets_add_exclude,
+    command_presets_add_include,
+    command_presets_add_term,
+    command_presets_clone,
+    command_presets_create,
+    command_presets_disable,
+    command_presets_enable,
+    command_presets_list,
+    command_presets_remove_term,
+    command_presets_save_adhoc,
+    command_presets_show,
+    command_presets_validate,
+)
 from .commands.profiles import command_profiles
 from .commands.review import (
     command_review_apply,
@@ -188,6 +201,62 @@ def build_parser() -> argparse.ArgumentParser:
     presets_show = presets_sub.add_parser("show")
     presets_show.add_argument("preset_name", help="Preset name to show.")
     presets_show.set_defaults(func=command_presets_show)
+
+    # --- presets management ---
+    presets_validate = presets_sub.add_parser("validate")
+    presets_validate.set_defaults(func=command_presets_validate)
+
+    presets_create = presets_sub.add_parser("create")
+    presets_create.add_argument("name")
+    presets_create.add_argument("--terms", required=True)
+    presets_create.add_argument("--include", help="Comma-separated keywords.")
+    presets_create.add_argument("--exclude", help="Comma-separated keywords.")
+    presets_create.add_argument("--description")
+    presets_create.add_argument("--remote-only", action="store_true", default=True)
+    presets_create.add_argument("--overwrite", action="store_true")
+    presets_create.set_defaults(func=command_presets_create)
+
+    presets_clone = presets_sub.add_parser("clone")
+    presets_clone.add_argument("source")
+    presets_clone.add_argument("new_name")
+    presets_clone.add_argument("--overwrite", action="store_true")
+    presets_clone.set_defaults(func=command_presets_clone)
+
+    presets_add_term = presets_sub.add_parser("add-term")
+    presets_add_term.add_argument("name")
+    presets_add_term.add_argument("term")
+    presets_add_term.set_defaults(func=command_presets_add_term)
+
+    presets_remove_term = presets_sub.add_parser("remove-term")
+    presets_remove_term.add_argument("name")
+    presets_remove_term.add_argument("term")
+    presets_remove_term.set_defaults(func=command_presets_remove_term)
+
+    presets_add_inc = presets_sub.add_parser("add-include")
+    presets_add_inc.add_argument("name")
+    presets_add_inc.add_argument("keyword")
+    presets_add_inc.set_defaults(func=command_presets_add_include)
+
+    presets_add_exc = presets_sub.add_parser("add-exclude")
+    presets_add_exc.add_argument("name")
+    presets_add_exc.add_argument("keyword")
+    presets_add_exc.set_defaults(func=command_presets_add_exclude)
+
+    presets_disable = presets_sub.add_parser("disable")
+    presets_disable.add_argument("name")
+    presets_disable.set_defaults(func=command_presets_disable)
+
+    presets_enable = presets_sub.add_parser("enable")
+    presets_enable.add_argument("name")
+    presets_enable.set_defaults(func=command_presets_enable)
+
+    presets_save_adhoc = presets_sub.add_parser("save-adhoc")
+    presets_save_adhoc.add_argument("name")
+    presets_save_adhoc.add_argument("--include", required=True)
+    presets_save_adhoc.add_argument("--exclude", default="")
+    presets_save_adhoc.add_argument("--remote-only", action="store_true", default=True)
+    presets_save_adhoc.add_argument("--overwrite", action="store_true")
+    presets_save_adhoc.set_defaults(func=command_presets_save_adhoc)
 
     # --- export ---
     export = sub.add_parser("export")

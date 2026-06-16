@@ -6,6 +6,7 @@ __pycache__/
 data/*.sqlite
 data/*.sqlite-*
 backups/*.sqlite
+config/backups/
 exports/*.html
 exports/*.csv
 exports/*.jsonl
