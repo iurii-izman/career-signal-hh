@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from . import db_migrations  # noqa: E402 — circular-safe, used in __init__
 from .models import ScoreDetails, ScoreResult, Vacancy
 from .utils import json_dumps
 
@@ -106,9 +107,7 @@ class Storage:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
-            connection.executescript(SCHEMA)
-        self.ensure_review_schema()
-        self._ensure_score_details_work_format()
+            db_migrations.apply_migrations(connection)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

@@ -44,12 +44,8 @@ def command_db_info(_: argparse.Namespace) -> int:
             samples = conn.execute(
                 "SELECT COUNT(*) FROM vacancies WHERE id LIKE 'sample-%'"
             ).fetchone()[0]
-            latest_vacancy = conn.execute(
-                "SELECT MAX(first_seen_at) FROM vacancies"
-            ).fetchone()[0]
-            latest_run = conn.execute(
-                "SELECT MAX(started_at) FROM search_runs"
-            ).fetchone()[0]
+            latest_vacancy = conn.execute("SELECT MAX(first_seen_at) FROM vacancies").fetchone()[0]
+            latest_run = conn.execute("SELECT MAX(started_at) FROM search_runs").fetchone()[0]
 
         table.add_row("Total vacancies", str(total))
         table.add_row("Total reviews", str(reviews))
@@ -71,9 +67,9 @@ def command_db_purge_samples(args: argparse.Namespace) -> int:
 
     storage = Storage(db_path)
     with storage.connect() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) FROM vacancies WHERE id LIKE 'sample-%'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM vacancies WHERE id LIKE 'sample-%'").fetchone()[
+            0
+        ]
 
     if count == 0:
         console.print("[green]Sample-вакансий не найдено.[/green]")
@@ -118,4 +114,108 @@ def command_db_backup(_: argparse.Namespace) -> int:
 
     size_mb = dst.stat().st_size / (1024 * 1024)
     console.print(f"[green]Бэкап создан: {dst} ({size_mb:.2f} MB)[/green]")
+    return 0
+
+
+def command_db_migrate(_: argparse.Namespace) -> int:
+    db_path = _get_db_path()
+    storage = Storage(db_path)
+    with storage.connect() as conn:
+        from ..db_migrations import apply_migrations, get_current_schema_version
+
+        before = get_current_schema_version(conn)
+        result = apply_migrations(conn)
+        after = get_current_schema_version(conn)
+    console.print(
+        f"Migrations: [green]{result['applied']} applied[/green], [dim]{result['skipped']} skipped[/dim]"
+    )
+    console.print(f"Schema version: {before} → {after}")
+    return 0
+
+
+def command_db_integrity(_: argparse.Namespace) -> int:
+    db_path = _get_db_path()
+    storage = Storage(db_path)
+    with storage.connect() as conn:
+        # PRAGMA integrity_check
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        integrity_ok = result[0] == "ok" if result else False
+
+        from ..db_migrations import count_orphans
+
+        stats = count_orphans(conn)
+
+    table = Table(title="Database Integrity")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_row(
+        "PRAGMA integrity_check", "[green]OK[/green]" if integrity_ok else "[red]FAIL[/red]"
+    )
+    for label, key in [
+        ("Orphan scores", "orphan_scores"),
+        ("Orphan score_details", "orphan_score_details"),
+        ("Orphan reviews", "orphan_reviews"),
+        ("Sample-* vacancies", "sample_count"),
+        ("Duplicate URLs", "duplicate_urls"),
+        ("Missing scores", "missing_scores"),
+        ("Missing score_details", "missing_score_details"),
+        ("Missing descriptions", "missing_descriptions"),
+    ]:
+        val = stats[key]
+        status = "[green]0[/green]" if val == 0 else f"[yellow]{val}[/yellow]"
+        table.add_row(label, status)
+    console.print(table)
+    return 0 if integrity_ok else 1
+
+
+def command_db_vacuum(_: argparse.Namespace) -> int:
+    db_path = _get_db_path()
+    # Backup first
+    command_db_backup(_)
+    storage = Storage(db_path)
+    with storage.connect() as conn:
+        before = Path(db_path).stat().st_size / (1024 * 1024)
+        conn.execute("VACUUM")
+        conn.commit()
+        after = Path(db_path).stat().st_size / (1024 * 1024)
+    console.print(f"[green]VACUUM complete. {before:.1f} MB → {after:.1f} MB[/green]")
+    return 0
+
+
+def command_db_optimize(_: argparse.Namespace) -> int:
+    db_path = _get_db_path()
+    storage = Storage(db_path)
+    with storage.connect() as conn:
+        conn.execute("PRAGMA optimize")
+        conn.execute("ANALYZE")
+        conn.commit()
+    console.print("[green]PRAGMA optimize + ANALYZE complete.[/green]")
+    return 0
+
+
+def command_db_cleanup_orphans(args: argparse.Namespace) -> int:
+    db_path = _get_db_path()
+    storage = Storage(db_path)
+    with storage.connect() as conn:
+        from ..db_migrations import cleanup_orphans, count_orphans
+
+        stats = count_orphans(conn)
+        total_orphans = (
+            stats["orphan_scores"] + stats["orphan_score_details"] + stats["orphan_reviews"]
+        )
+        if total_orphans == 0:
+            console.print("[green]No orphans found.[/green]")
+            return 0
+        if not args.yes:
+            console.print(f"[yellow]Found {total_orphans} orphan records. Continue?[/yellow]")
+            try:
+                if not Confirm.ask("Continue?", default=False):
+                    return 0
+            except (EOFError, KeyboardInterrupt):
+                return 0
+        result = cleanup_orphans(conn)
+    for k, v in result.items():
+        if v:
+            console.print(f"  {k}: {v}")
+    console.print(f"[green]Cleaned up {sum(result.values())} orphan records.[/green]")
     return 0

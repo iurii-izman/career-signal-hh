@@ -172,9 +172,16 @@ def build_db_parser(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("db")
     ps = p.add_subparsers(dest="db_command", required=True)
     ps.add_parser("info").set_defaults(func=db.command_db_info)
+    ps.add_parser("migrate").set_defaults(func=db.command_db_migrate)
+    ps.add_parser("integrity").set_defaults(func=db.command_db_integrity)
+    ps.add_parser("vacuum").set_defaults(func=db.command_db_vacuum)
+    ps.add_parser("optimize").set_defaults(func=db.command_db_optimize)
     pu = ps.add_parser("purge-samples")
     pu.add_argument("-y", "--yes", action="store_true")
     pu.set_defaults(func=db.command_db_purge_samples)
+    co = ps.add_parser("cleanup-orphans")
+    co.add_argument("-y", "--yes", action="store_true")
+    co.set_defaults(func=db.command_db_cleanup_orphans)
     ps.add_parser("backup").set_defaults(func=db.command_db_backup)
 
 

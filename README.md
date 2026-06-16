@@ -572,7 +572,7 @@ src/
   exporter_html.py     → автономный HTML-отчёт
   commands/
     auth.py            → auth-check
-    db.py              → db info, backup, purge-samples
+    db.py              → db info, migrate, integrity, backup, vacuum, optimize, purge-samples, cleanup-orphans
     doctor.py          → doctor
     export.py          → export
     profiles.py        → profiles
@@ -625,6 +625,13 @@ python -m src.main db backup
 
 # Удаление sample-вакансий из рабочей базы
 python -m src.main db purge-samples
+
+# Миграции и целостность
+python -m src.main db migrate        # применить ожидающие миграции
+python -m src.main db integrity      # проверка целостности
+python -m src.main db vacuum         # сжатие БД (с предварительным бэкапом)
+python -m src.main db optimize       # оптимизация индексов
+python -m src.main db cleanup-orphans  # удалить осиротевшие записи
 ```
 
 Рекомендуемый maintenance:
