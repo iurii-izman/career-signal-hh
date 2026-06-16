@@ -6,3 +6,4 @@ rich>=13.7,<14
 beautifulsoup4>=4.12,<5
 python-dateutil>=2.9,<3
 pytest>=8.0,<9
+ruff>=0.3,<1

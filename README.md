@@ -346,6 +346,22 @@ python -m src.main export --min-score 35 --profile ai_automation --days 14
 - `data/sample_vacancies.sqlite` — база для sample-export;
 - `backups/vacancies_YYYYMMDD_HHMMSS.sqlite` — бэкапы.
 
+## Quality checks
+
+```powershell
+# Smoke test
+python scripts/smoke_check.ps1  # Windows
+bash scripts/smoke_check.sh      # Linux/Mac
+
+# Lint
+python -m ruff check src/
+
+# Version
+python -m src.main version
+
+# Release checklist: RELEASE_CHECKLIST.md
+```
+
 ## Поисковые профили
 
 Запросы, регионы и параметры находятся в

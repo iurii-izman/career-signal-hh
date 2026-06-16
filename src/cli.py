@@ -49,6 +49,7 @@ from .commands.sample import command_sample_export
 from .commands.score import command_score_explain, command_score_rescore
 from .commands.search import command_search
 from .commands.stats import command_stats, command_top
+from .commands.version_cmd import command_version
 from .storage import REVIEW_STATUSES
 
 
@@ -62,8 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["smoke", "normal", "deep"],
         default=None,
-        help="Search mode: smoke (small, fast), normal (daily), deep (full). "
-        "Default: normal.",
+        help="Search mode: smoke (small, fast), normal (daily), deep (full). Default: normal.",
     )
     search.add_argument(
         "--max-pages",
@@ -77,12 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override per-page for the selected mode.",
     )
-    search.add_argument(
-        "--profile", help="Use legacy search profile (from search_profiles.yaml)."
-    )
-    search.add_argument(
-        "--preset", help="Use universal search preset (from search_presets.yaml)."
-    )
+    search.add_argument("--profile", help="Use legacy search profile (from search_profiles.yaml).")
+    search.add_argument("--preset", help="Use universal search preset (from search_presets.yaml).")
     search.add_argument(
         "--adhoc",
         action="store_true",
@@ -104,9 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Restrict to remote vacancies (default true for adhoc).",
     )
-    search.add_argument(
-        "--dry-run", action="store_true", help="Show estimate without API calls."
-    )
+    search.add_argument("--dry-run", action="store_true", help="Show estimate without API calls.")
     search.add_argument(
         "--force-details",
         action="store_true",
@@ -129,9 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- apply-pack ---
     apply_pack = sub.add_parser("apply-pack")
     apply_pack.add_argument("vacancy_id", nargs="?", help="Vacancy ID.")
-    apply_pack.add_argument(
-        "--top", type=int, help="Generate packs for top N vacancies."
-    )
+    apply_pack.add_argument("--top", type=int, help="Generate packs for top N vacancies.")
     apply_pack.add_argument("--limit", type=int, help="Alias for --top.")
     apply_pack.add_argument("--decision", help="Filter by decision label.")
     apply_pack.add_argument("--preset", help="Filter by preset name.")
@@ -141,16 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
     apply_pack.add_argument(
         "--save-review", action="store_true", help="Save cover letter draft to review."
     )
-    apply_pack.add_argument(
-        "--overwrite", action="store_true", help="Overwrite existing draft."
-    )
+    apply_pack.add_argument("--overwrite", action="store_true", help="Overwrite existing draft.")
     apply_pack.set_defaults(func=command_apply_pack)
 
     # --- autopilot ---
     autopilot_parser = sub.add_parser("autopilot")
-    autopilot_sub = autopilot_parser.add_subparsers(
-        dest="autopilot_command", required=True
-    )
+    autopilot_sub = autopilot_parser.add_subparsers(dest="autopilot_command", required=True)
     auto_daily = autopilot_sub.add_parser("daily")
     auto_daily.add_argument("--mode", choices=["smoke", "normal"], default="normal")
     auto_daily.add_argument("--preset", help="Preset name.")
@@ -171,9 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- analytics ---
     analytics_parser = sub.add_parser("analytics")
-    analytics_sub = analytics_parser.add_subparsers(
-        dest="analytics_command", required=True
-    )
+    analytics_sub = analytics_parser.add_subparsers(dest="analytics_command", required=True)
     analytics_sub.add_parser("summary").set_defaults(func=command_analytics_summary)
     analytics_sub.add_parser("skills").set_defaults(func=command_analytics_skills)
     analytics_sub.add_parser("employers").set_defaults(func=command_analytics_employers)
@@ -261,9 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- export ---
     export = sub.add_parser("export")
     export.add_argument("--min-score", type=int, default=0)
-    export.add_argument(
-        "--profile", default=None, help="Filter by legacy profile name."
-    )
+    export.add_argument("--profile", default=None, help="Filter by legacy profile name.")
     export.add_argument(
         "--preset", default=None, help="Filter by preset name (alias for --profile)."
     )
@@ -312,9 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     review_list.add_argument("--status", choices=sorted(REVIEW_STATUSES))
     review_list.add_argument("--min-score", type=int, default=0)
     review_list.add_argument("--limit", type=int, default=30)
-    review_list.add_argument(
-        "--profile", default=None, help="Filter by legacy profile name."
-    )
+    review_list.add_argument("--profile", default=None, help="Filter by legacy profile name.")
     review_list.add_argument(
         "--preset", default=None, help="Filter by preset name (alias for --profile)."
     )
@@ -381,9 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- bulk set ---
     bulk_set = review_sub.add_parser("bulk-set")
-    bulk_set.add_argument(
-        "--new-status", required=True, choices=sorted(REVIEW_STATUSES)
-    )
+    bulk_set.add_argument("--new-status", required=True, choices=sorted(REVIEW_STATUSES))
     bulk_set.add_argument("--min-score", type=int)
     bulk_set.add_argument("--max-score", type=int)
     bulk_set.add_argument("--decision")
@@ -392,6 +372,9 @@ def build_parser() -> argparse.ArgumentParser:
     bulk_set.add_argument("--force", action="store_true")
     bulk_set.add_argument("-y", "--yes", action="store_true")
     bulk_set.set_defaults(func=command_review_bulk_set)
+
+    # --- version ---
+    sub.add_parser("version").set_defaults(func=command_version)
 
     return parser
 
