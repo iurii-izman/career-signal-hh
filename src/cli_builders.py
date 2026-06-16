@@ -12,6 +12,7 @@ from .commands import (
     apply_pack,
     auth,
     autopilot,
+    calibrate,
     db,
     doctor,
     export,
@@ -283,6 +284,8 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_export_parser(sub)
     build_db_parser(sub)
     build_review_parser(sub)
+    build_calibrate_parser(sub)
+
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
     sub.add_parser("stats").set_defaults(func=stats.command_stats)
@@ -293,3 +296,18 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     sp.add_argument("--db", default=None)
     sp.set_defaults(func=sample.command_sample_export)
     sub.add_parser("version").set_defaults(func=version_cmd.command_version)
+
+
+def build_calibrate_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("calibrate")
+    ps = p.add_subparsers(dest="calibrate_command", required=True)
+    ps.add_parser("analyze").set_defaults(func=calibrate.command_calibrate_analyze)
+    s = ps.add_parser("suggest")
+    s.add_argument("--preset")
+    s.set_defaults(func=calibrate.command_calibrate_suggest)
+    a = ps.add_parser("apply")
+    a.add_argument("--preset", required=True)
+    a.add_argument("--suggestion-id", required=True)
+    a.add_argument("-y", "--yes", action="store_true")
+    a.set_defaults(func=calibrate.command_calibrate_apply)
+    ps.add_parser("export").set_defaults(func=calibrate.command_calibrate_export)

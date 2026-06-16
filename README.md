@@ -492,6 +492,34 @@ python -m src.main analytics export
 # → exports/analytics_employers.csv
 ```
 
+## Calibration loop
+
+Анализ review-данных для улучшения presets без ML.
+
+```powershell
+# Анализ: какие keywords у accepted vs rejected
+python -m src.main calibrate analyze
+
+# Сгенерировать предложения по улучшению preset
+python -m src.main calibrate suggest --preset ai_rag_remote
+
+# Применить предложение (с бэкапом YAML)
+python -m src.main calibrate apply --preset ai_rag_remote --suggestion-id abc123
+
+# Экспорт отчёта
+python -m src.main calibrate export
+```
+
+Рекомендуемый workflow:
+```powershell
+python -m src.main review bulk-reject --max-score 35 --yes
+python -m src.main calibrate analyze
+python -m src.main calibrate suggest --preset ai_rag_remote
+python -m src.main calibrate export
+```
+
+Не применяет изменения автоматически — всегда требует `--apply` или `--yes`.
+
 ## Scoring v2 (explainable)
 
 Новый scoring с полевыми весами, отслеживанием ключевых слов и decision labels.
