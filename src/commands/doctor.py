@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ..hh_client import HHClient
+from ..search_presets import load_search_presets
 from ..search_profiles import load_scoring_rules, load_search_profiles
 from ..storage import Storage
 
@@ -39,7 +40,8 @@ def command_doctor(_: argparse.Namespace) -> int:
     for filename, required in [
         (".env", False),
         (".env.example", True),
-        ("config/search_profiles.yaml", True),
+        ("config/search_profiles.yaml", False),
+        ("config/search_presets.yaml", False),
         ("config/scoring_rules.yaml", True),
     ]:
         path = Path(filename)
@@ -47,13 +49,18 @@ def command_doctor(_: argparse.Namespace) -> int:
         details = str(path.resolve()) if path.exists() else "Файл не найден"
         add(filename, status, details)
 
-    for filename in ["config/search_profiles.yaml", "config/scoring_rules.yaml"]:
+    for filename in [
+        "config/search_profiles.yaml",
+        "config/search_presets.yaml",
+        "config/scoring_rules.yaml",
+    ]:
         try:
-            content = (
-                load_search_profiles(filename)
-                if "search_profiles" in filename
-                else load_scoring_rules(filename)
-            )
+            if "search_presets" in filename:
+                content = load_search_presets(filename)
+            elif "search_profiles" in filename:
+                content = load_search_profiles(filename)
+            else:
+                content = load_scoring_rules(filename)
             if not isinstance(content, dict):
                 raise ValueError("корневое значение должно быть mapping")
             add(f"YAML: {filename}", "OK", "Конфигурация валидна")

@@ -102,8 +102,8 @@ def _build_estimate_selected(search_units: list[dict[str, Any]]) -> dict[str, An
         if src not in by_source:
             by_source[src] = {"queries": [], "areas": [], "params": unit.get("params")}
         by_source[src]["queries"].append(unit["query"])
-        by_source[src]["areas"].append(unit["area"])
-    # Deduplicate
+        area_display = unit["area"] if unit["area"] is not None else "all"
+        by_source[src]["areas"].append(area_display)
     for src in by_source:
         by_source[src]["queries"] = list(dict.fromkeys(by_source[src]["queries"]))
         by_source[src]["areas"] = list(dict.fromkeys(by_source[src]["areas"]))

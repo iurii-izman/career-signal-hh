@@ -53,6 +53,7 @@ def merge_defaults(defaults: dict[str, Any], preset: dict[str, Any]) -> dict[str
         "exclude",
         "boost",
         "penalties",
+        "salary_as_bonus",
     ):
         if key in preset:
             merged[key] = preset[key]
