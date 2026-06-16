@@ -44,14 +44,14 @@ def _resolve_search_config(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _build_preset_search_units(preset: dict[str, Any]) -> list[dict[str, Any]]:
-    """Convert a preset into search units compatible with the search loop."""
+    """Convert a preset into search units. Each unit carries its own preset object."""
     search_terms = preset.get("search_terms", [])
     areas = preset.get("areas", [])
     schedule = preset.get("schedule", [])
     experience = preset.get("experience", [])
 
     if not areas:
-        areas = [None]  # None = no area restriction
+        areas = [None]
     if not isinstance(areas, list):
         areas = [areas]
 
@@ -62,6 +62,7 @@ def _build_preset_search_units(preset: dict[str, Any]) -> list[dict[str, Any]]:
         params["experience"] = experience
 
     source = preset["_name"]
+    mode = preset.get("_source", "preset")
 
     units = []
     for term in search_terms:
@@ -72,6 +73,8 @@ def _build_preset_search_units(preset: dict[str, Any]) -> list[dict[str, Any]]:
                     "area": area,
                     "params": params,
                     "source": source,
+                    "mode": mode,
+                    "preset": preset,
                 }
             )
     return units
@@ -89,6 +92,8 @@ def _build_legacy_search_units(selected: dict[str, Any]) -> list[dict[str, Any]]
                         "area": area,
                         "params": config.get("params"),
                         "source": profile_name,
+                        "mode": "legacy",
+                        "preset": None,
                     }
                 )
     return units
@@ -116,11 +121,8 @@ def command_search(args: argparse.Namespace) -> int:
     search_config["_force_details"] = args.force_details
     verbose = args.verbose
 
-    # Determine search mode: adhoc > preset > profile > presets (default) > legacy fallback
-    use_preset_scoring = False
-    active_preset: dict[str, Any] | None = None
     search_units: list[dict[str, Any]] = []
-    rules = None  # legacy scoring rules
+    rules = None  # legacy scoring rules, loaded on demand
 
     if args.adhoc:
         include_list = [k.strip() for k in (args.include or "").split(",") if k.strip()]
@@ -131,23 +133,20 @@ def command_search(args: argparse.Namespace) -> int:
             )
             return 2
         remote_only = args.remote_only if args.remote_only is not None else True
-        active_preset = create_adhoc_preset(
+        preset = create_adhoc_preset(
             include_list, exclude_list, remote_only=remote_only
         )
-        use_preset_scoring = True
-        search_units = _build_preset_search_units(active_preset)
-        search_config["_mode_name"] = f"adhoc ({active_preset['_name']})"
+        search_units = _build_preset_search_units(preset)
+        search_config["_mode_name"] = f"adhoc ({preset['_name']})"
 
     elif args.preset:
-        active_preset = get_preset(args.preset)
-        if active_preset is None:
+        preset = get_preset(args.preset)
+        if preset is None:
             console.print(f"[red]Preset '{args.preset}' not found.[/red]")
             return 2
-        use_preset_scoring = True
-        search_units = _build_preset_search_units(active_preset)
+        search_units = _build_preset_search_units(preset)
 
     elif args.profile:
-        # Legacy profile mode
         try:
             profiles = load_search_profiles()
         except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -161,10 +160,12 @@ def command_search(args: argparse.Namespace) -> int:
         search_units = _build_legacy_search_units(selected)
 
     else:
-        # Default: try presets first, fallback to legacy profiles
+        # Default: presets first, then legacy fallback
         presets = list_presets()
         if presets:
-            use_preset_scoring = True
+            # Smoke mode: only first enabled preset
+            if search_config.get("single_profile"):
+                presets = presets[:1]
             for p in presets:
                 search_units.extend(_build_preset_search_units(p))
         else:
@@ -181,7 +182,6 @@ def command_search(args: argparse.Namespace) -> int:
             if not profiles:
                 console.print("[red]Нет enabled profiles или presets.[/red]")
                 return 2
-            # Legacy single_profile support for smoke mode
             if search_config.get("single_profile"):
                 first = next(iter(profiles.items()))
                 profiles = {first[0]: first[1]}
@@ -204,7 +204,7 @@ def command_search(args: argparse.Namespace) -> int:
     # Real run
     storage, client, _rules = _services()
     if rules is None:
-        rules = _rules  # fallback scoring rules if needed
+        rules = _rules
 
     client.set_budget(
         max_requests=search_config["max_requests_per_run"],
@@ -317,13 +317,7 @@ def command_search(args: argparse.Namespace) -> int:
                                 else:
                                     vacancy = Vacancy.from_hh(summary, profile_name)
                                     is_new = storage.upsert_vacancy(vacancy)
-                                    _score_and_store(
-                                        storage,
-                                        vacancy,
-                                        rules,
-                                        active_preset,
-                                        use_preset_scoring,
-                                    )
+                                    _score_and_store(storage, vacancy, rules, unit)
                                     counters[
                                         "new_count" if is_new else "updated_count"
                                     ] += 1
@@ -346,9 +340,7 @@ def command_search(args: argparse.Namespace) -> int:
                             continue
 
                         is_new = storage.upsert_vacancy(vacancy)
-                        _score_and_store(
-                            storage, vacancy, rules, active_preset, use_preset_scoring
-                        )
+                        _score_and_store(storage, vacancy, rules, unit)
                         counters["loaded_count"] += 1
                         counters["new_count" if is_new else "updated_count"] += 1
 
@@ -421,11 +413,12 @@ def _score_and_store(
     storage,
     vacancy: Vacancy,
     rules: dict[str, Any] | None,
-    preset: dict[str, Any] | None,
-    use_preset: bool,
+    unit: dict[str, Any],
 ) -> None:
-    """Score vacancy using preset or legacy rules and store the result."""
-    if use_preset and preset:
+    """Score vacancy using the unit's preset (if any) or legacy rules."""
+    preset = unit.get("preset")
+    mode = unit.get("mode", "legacy")
+    if preset and mode in ("preset", "adhoc"):
         storage.upsert_score(score_by_preset(vacancy, preset))
     elif rules:
         storage.upsert_score(score_vacancy(vacancy, rules))

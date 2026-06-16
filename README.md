@@ -205,6 +205,15 @@ python -m src.main search --preset ai_rag_remote --mode smoke
 python -m src.main search --preset bitrix24_crm_remote --mode normal
 ```
 
+По умолчанию (без --preset/--profile/--adhoc):
+- **smoke** — только первый enabled preset
+- **normal** — все enabled presets
+- **deep** — все enabled presets, с подтверждением
+
+Каждая вакансия скорится тем пресетом, по которому была найдена.
+`best_profile` в scores равен имени пресета (например, `ai_rag_remote`).
+`source_profile` используется для хранения идентификатора пресета.
+
 ### Ad-hoc поиск
 
 ```powershell
