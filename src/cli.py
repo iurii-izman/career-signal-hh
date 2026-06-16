@@ -4,6 +4,7 @@ import argparse
 
 from .commands.apply_pack import command_apply_pack
 from .commands.auth import command_auth_check
+from .commands.autopilot import command_autopilot_daily, command_autopilot_status
 from .commands.db import command_db_backup, command_db_info, command_db_purge_samples
 from .commands.doctor import command_doctor
 from .commands.export import command_export
@@ -122,6 +123,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite", action="store_true", help="Overwrite existing draft."
     )
     apply_pack.set_defaults(func=command_apply_pack)
+
+    # --- autopilot ---
+    autopilot_parser = sub.add_parser("autopilot")
+    autopilot_sub = autopilot_parser.add_subparsers(
+        dest="autopilot_command", required=True
+    )
+    auto_daily = autopilot_sub.add_parser("daily")
+    auto_daily.add_argument("--mode", choices=["smoke", "normal"], default="normal")
+    auto_daily.add_argument("--preset", help="Preset name.")
+    auto_daily.add_argument("--skip-auth-check", action="store_true")
+    auto_daily.add_argument("--skip-search", action="store_true")
+    auto_daily.add_argument("--skip-rescore", action="store_true")
+    auto_daily.add_argument("--skip-export", action="store_true")
+    auto_daily.add_argument("--skip-queue", action="store_true")
+    auto_daily.add_argument("--queue-limit", type=int, default=20)
+    auto_daily.add_argument("--min-score", type=int, default=70)
+    auto_daily.add_argument("--backup-first", action="store_true")
+    auto_daily.add_argument("--allow-deep", action="store_true")
+    auto_daily.add_argument("--ignore-doctor-warnings", action="store_true")
+    auto_daily.add_argument("-y", "--yes", action="store_true")
+    auto_daily.set_defaults(func=command_autopilot_daily)
+    auto_status = autopilot_sub.add_parser("status")
+    auto_status.set_defaults(func=command_autopilot_status)
 
     # --- score ---
     score_parser = sub.add_parser("score")

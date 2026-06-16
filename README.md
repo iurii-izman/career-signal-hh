@@ -382,6 +382,38 @@ python -m src.main review bulk-set --new-status maybe --min-score 60 --max-score
 Protected statuses (`applied`, `interview`, `offer`) не перезаписываются
 без `--force`. Summary показывает matched/updated/skipped_protected.
 
+## Daily autopilot
+
+Одна команда для всей ежедневной рутины.
+**Не фоновый сервис, не автоотклик.** Локальный CLI-оркестратор.
+
+```powershell
+# Полный daily цикл
+python -m src.main autopilot daily --backup-first
+
+# Только статус
+python -m src.main autopilot status
+
+# Быстрый прогон с конкретным пресетом
+python -m src.main autopilot daily --preset ai_rag_remote --mode smoke --yes
+
+# Dry-run: проверить конфигурацию без поиска
+python -m src.main autopilot daily --skip-search --skip-auth-check
+```
+
+Safety:
+- Deep mode запрещён без `--allow-deep`
+- Doctor и auth check останавливают прогон при ошибках
+- 429 останавливает поиск с сохранением результатов
+- Токен никогда не выводится
+
+Рекомендуемый workflow:
+```powershell
+python -m src.main autopilot daily --backup-first
+python -m src.main review next-best
+python -m src.main apply-pack --top 5 --decision strong_match
+```
+
 ## Scoring v2 (explainable)
 
 Новый scoring с полевыми весами, отслеживанием ключевых слов и decision labels.
