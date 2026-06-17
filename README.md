@@ -495,6 +495,35 @@ python -m src.main review next-best
 python -m src.main apply-pack --top 5 --decision strong_match
 ```
 
+## Cockpit (Daily Action Center)
+
+Read-only HTML dashboard — «Что мне сделать сегодня?»
+
+```powershell
+# Сгенерировать cockpit
+python -m src.main cockpit export
+# → exports/cockpit.html
+
+# Открыть в браузере
+python -m src.main cockpit open
+```
+
+Секции cockpit:
+- **Today's Action Plan** — приоритезированные карточки действий
+  (autopilot, review next-best, apply-pack, bulk-archive, backup,
+  dedupe queue, calibration) с reason и copy-paste командами.
+- **Today's Queue** — таблица с score, decision, keywords, risks,
+  cluster badge, apply-pack link, copyable review commands.
+- **Preset Performance** — эффективность пресетов.
+- **Review Funnel** — воронка статусов.
+- **Generated Files** — статус всех export-файлов с датами
+  и командами для регенерации.
+- **Latest Search Runs** — последние 5 поисковых запусков.
+- **Data Quality** — кластеры, дубликаты, aliases.
+
+Без внешних зависимостей — весь CSS и JS инлайн, не требует
+сервера, открывается из file://.
+
 ## Market analytics
 
 Анализ рынка вакансий: навыки, работодатели, зарплаты, пресеты, воронка откликов.
