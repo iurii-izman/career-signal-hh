@@ -84,7 +84,7 @@ def seed_vacancies_with_scores(
 
     vacancies: list[Vacancy] = []
     for name in fixture_names:
-        v = make_vacancy_from_fixture(name)
+        v = make_vacancy_from_fixture(name, source_profile=preset_name)
         storage.upsert_vacancy(v)
         details = compute_score_details(v, {**preset, "_name": preset_name})
         storage.upsert_score_details(details)

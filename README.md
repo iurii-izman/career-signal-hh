@@ -113,6 +113,34 @@ python -m src.main wizard apply --plan
 - **Опасные действия требуют подтверждения** (backup, search — Confirm.ask).
 - **`--yes` пропускает подтверждения** для автоматизации.
 
+## Search Intelligence Lab
+
+Анализируйте и оптимизируйте поисковые запросы:
+
+```powershell
+python -m src.main search-lab terms --preset ai_rag_remote
+python -m src.main search-lab suggest-terms --preset ai_rag_remote
+python -m src.main search-lab compare --preset-a ai_rag_remote --preset-b bitrix24_crm_remote
+python -m src.main search-lab dry-plan --preset ai_rag_remote
+python -m src.main search-lab export
+```
+
+### Команды
+
+| Команда           | Описание                                                      |
+|-------------------|--------------------------------------------------------------|
+| `terms`           | Статистика по каждому search_term: avg score, strong, noise |
+| `suggest-terms`   | Предлагает новые термины на основе high-score вакансий      |
+| `compare`         | Сравнивает два пресета: overlap, keywords, employers        |
+| `dry-plan`        | Оценка API-запросов без реального поиска                     |
+| `export`          | Экспорт: search_lab_report.html + search_terms.csv + json   |
+
+### Рекомендации
+
+- **KEEP** — термин даёт много strong match и хороших исходов
+- **REFINE** — низкий avg score или высокий found/loaded разрыв
+- **REMOVE** — нет результатов или высокая доля rejected
+
 ## Безопасные режимы поиска (Safe Search Modes)
 
 CareerSignal HH поддерживает три режима поиска для защиты API HH от избыточной

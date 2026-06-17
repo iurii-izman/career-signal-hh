@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from . import db_migrations  # noqa: E402 — circular-safe, used in __init__
 from .models import ScoreDetails, ScoreResult, Vacancy
-from .utils import json_dumps
+from .utils import json_dumps, json_loads
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vacancies (
@@ -697,6 +697,181 @@ class Storage:
             return connection.execute(
                 "SELECT COUNT(DISTINCT canonical_name) FROM employer_aliases"
             ).fetchone()[0]
+
+    # ── Search Lab analytics ───────────────────────────────────────────────
+
+    def search_term_performance(self, preset_name: str) -> list[dict[str, Any]]:
+        """Return per-search-term analytics for a preset.
+
+        For each distinct query in search_runs for this profile,
+        join with vacancy scores and reviews to compute quality metrics.
+        """
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT
+                    sr.query AS term,
+                    COUNT(DISTINCT sr.id) AS total_runs,
+                    MAX(sr.found_count) AS max_found,
+                    MAX(sr.loaded_count) AS max_loaded,
+                    COUNT(DISTINCT v.id) AS vacancy_count,
+                    ROUND(AVG(COALESCE(s.total_score, 0)), 1) AS avg_score,
+                    SUM(CASE WHEN sd.decision = 'strong_match' THEN 1 ELSE 0 END) AS strong_count,
+                    SUM(CASE WHEN sd.decision = 'queue' THEN 1 ELSE 0 END) AS queue_count,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') IN ('rejected', 'archived') THEN 1 ELSE 0 END) AS rejected_count,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') IN ('applied', 'interview', 'offer') THEN 1 ELSE 0 END) AS good_outcome_count
+                FROM search_runs sr
+                LEFT JOIN vacancies v ON v.source_profile = sr.profile_name
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                WHERE sr.profile_name = ?
+                  AND sr.query IS NOT NULL AND sr.query != ''
+                GROUP BY sr.query
+                ORDER BY avg_score DESC, max_found DESC
+                """,
+                (preset_name,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def preset_overlap(self, preset_a: str, preset_b: str) -> dict[str, Any]:
+        """Return overlap statistics between two presets."""
+        with self.connect() as connection:
+            # Total vacancies per preset
+            total_a = connection.execute(
+                "SELECT COUNT(*) FROM vacancies WHERE source_profile = ?",
+                (preset_a,),
+            ).fetchone()[0]
+            total_b = connection.execute(
+                "SELECT COUNT(*) FROM vacancies WHERE source_profile = ?",
+                (preset_b,),
+            ).fetchone()[0]
+
+            # Overlap (same vacancy id appears in both presets)
+            overlap = connection.execute(
+                """SELECT COUNT(*) FROM (
+                    SELECT id FROM vacancies WHERE source_profile = ?
+                    INTERSECT
+                    SELECT id FROM vacancies WHERE source_profile = ?
+                )""",
+                (preset_a, preset_b),
+            ).fetchone()[0]
+
+            # Avg scores
+            avg_a = (
+                connection.execute(
+                    """SELECT ROUND(AVG(COALESCE(s.total_score, 0)), 1)
+                   FROM vacancies v
+                   LEFT JOIN scores s ON s.vacancy_id = v.id
+                   WHERE v.source_profile = ?""",
+                    (preset_a,),
+                ).fetchone()[0]
+                or 0
+            )
+
+            avg_b = (
+                connection.execute(
+                    """SELECT ROUND(AVG(COALESCE(s.total_score, 0)), 1)
+                   FROM vacancies v
+                   LEFT JOIN scores s ON s.vacancy_id = v.id
+                   WHERE v.source_profile = ?""",
+                    (preset_b,),
+                ).fetchone()[0]
+                or 0
+            )
+
+            # Top keywords per preset (from matched_keywords_json)
+            top_keywords = {}
+            for label, pname in [("a", preset_a), ("b", preset_b)]:
+                kw_rows = connection.execute(
+                    """SELECT sd.matched_keywords_json
+                       FROM vacancies v
+                       JOIN score_details sd ON sd.vacancy_id = v.id
+                       WHERE v.source_profile = ?
+                       LIMIT 200""",
+                    (pname,),
+                ).fetchall()
+
+                kw_freq: dict[str, int] = {}
+                for row in kw_rows:
+                    for kw in json_loads(row["matched_keywords_json"], []):
+                        k = kw.get("keyword", "")
+                        if k:
+                            kw_freq[k] = kw_freq.get(k, 0) + 1
+                top_keywords[label] = sorted(kw_freq.items(), key=lambda x: -x[1])[:10]
+
+            # Top employers
+            top_employers = {}
+            for label, pname in [("a", preset_a), ("b", preset_b)]:
+                emp_rows = connection.execute(
+                    """SELECT employer_name, COUNT(*) cnt
+                       FROM vacancies
+                       WHERE source_profile = ? AND employer_name != ''
+                       GROUP BY employer_name
+                       ORDER BY cnt DESC LIMIT 5""",
+                    (pname,),
+                ).fetchall()
+                top_employers[label] = [(r["employer_name"], r["cnt"]) for r in emp_rows]
+
+        return {
+            "total_a": total_a,
+            "total_b": total_b,
+            "overlap": overlap,
+            "unique_a": total_a - overlap,
+            "unique_b": total_b - overlap,
+            "avg_score_a": avg_a,
+            "avg_score_b": avg_b,
+            "top_keywords": top_keywords,
+            "top_employers": top_employers,
+        }
+
+    def high_quality_keywords(self, preset_name: str, min_score: int = 70) -> list[dict[str, Any]]:
+        """Return top keywords from high-scoring vacancies for a preset."""
+        with self.connect() as connection:
+            # Get matched_keywords from score_details of good vacancies
+            kw_rows = connection.execute(
+                """SELECT sd.matched_keywords_json, v.key_skills_json, v.name
+                   FROM vacancies v
+                   JOIN score_details sd ON sd.vacancy_id = v.id
+                   WHERE v.source_profile = ? AND sd.total_score >= ?
+                   ORDER BY sd.total_score DESC
+                   LIMIT 100""",
+                (preset_name, min_score),
+            ).fetchall()
+
+            kw_freq: dict[str, int] = {}
+            skill_freq: dict[str, int] = {}
+            title_words: dict[str, int] = {}
+
+            for row in kw_rows:
+                for kw in json_loads(row["matched_keywords_json"], []):
+                    k = kw.get("keyword", "")
+                    if k:
+                        kw_freq[k] = kw_freq.get(k, 0) + 1
+                for sk in json_loads(row["key_skills_json"], []):
+                    if sk and len(sk) > 2:
+                        skill_freq[sk.lower()] = skill_freq.get(sk.lower(), 0) + 1
+                # Simple title word extraction
+                title = row["name"] or ""
+                for word in title.lower().replace("(", " ").replace(")", " ").split():
+                    if len(word) > 3 and word not in (
+                        "with",
+                        "from",
+                        "your",
+                        "this",
+                        "that",
+                        "have",
+                    ):
+                        title_words[word] = title_words.get(word, 0) + 1
+
+            # Merge and dedupe
+            suggestions: list[dict[str, Any]] = []
+            for kw, cnt in sorted(kw_freq.items(), key=lambda x: -x[1])[:15]:
+                suggestions.append({"keyword": kw, "count": cnt, "source": "matched_keyword"})
+            for sk, cnt in sorted(skill_freq.items(), key=lambda x: -x[1])[:10]:
+                if sk not in {s["keyword"] for s in suggestions}:
+                    suggestions.append({"keyword": sk, "count": cnt, "source": "key_skill"})
+
+        return sorted(suggestions, key=lambda x: -x["count"])
 
     def bulk_update_review_status(
         self,

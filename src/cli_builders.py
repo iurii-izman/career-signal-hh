@@ -27,6 +27,7 @@ from .commands import (
     scheduler,
     score,
     search,
+    search_lab,
     stats,
     version_cmd,
     wizard,
@@ -307,6 +308,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_scheduler_parser(sub)
     build_maintenance_parser(sub)
     build_wizard_parser(sub)
+    build_search_lab_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -410,3 +412,27 @@ def build_wizard_parser(sub: argparse._SubParsersAction) -> None:
 
     # Set default handler for bare 'wizard' (no subcommand)
     p.set_defaults(func=wizard.command_wizard, wizard_command="menu")
+
+
+def build_search_lab_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("search-lab")
+    ps = p.add_subparsers(dest="search_lab_command", required=True)
+
+    t = ps.add_parser("terms")
+    t.add_argument("--preset", required=True)
+    t.set_defaults(func=search_lab.command_search_lab_terms)
+
+    s = ps.add_parser("suggest-terms")
+    s.add_argument("--preset", required=True)
+    s.set_defaults(func=search_lab.command_search_lab_suggest_terms)
+
+    c = ps.add_parser("compare")
+    c.add_argument("--preset-a", required=True)
+    c.add_argument("--preset-b", required=True)
+    c.set_defaults(func=search_lab.command_search_lab_compare)
+
+    d = ps.add_parser("dry-plan")
+    d.add_argument("--preset", required=True)
+    d.set_defaults(func=search_lab.command_search_lab_dry_plan)
+
+    ps.add_parser("export").set_defaults(func=search_lab.command_search_lab_export)
