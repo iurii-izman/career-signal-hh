@@ -274,6 +274,16 @@ class Storage:
 
         return False
 
+    def find_by_url(self, url: str) -> str | None:
+        """Return vacancy ID for a given alternate_url, or None."""
+        if not url:
+            return None
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM vacancies WHERE alternate_url = ?", (url,)
+            ).fetchone()
+        return row["id"] if row else None
+
     def upsert_vacancy(self, vacancy: Vacancy) -> bool:
         is_new = not self.vacancy_exists(vacancy.id)
         values = vacancy.model_dump()

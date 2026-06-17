@@ -19,6 +19,7 @@ from .commands import (
     doctor,
     export,
     health,
+    import_vacancy,
     maintenance,
     presets,
     profiles,
@@ -311,6 +312,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_wizard_parser(sub)
     build_search_lab_parser(sub)
     build_campaigns_parser(sub)
+    build_import_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -464,3 +466,34 @@ def build_campaigns_parser(sub: argparse._SubParsersAction) -> None:
     ap.add_argument("name")
     ap.add_argument("--top", type=int, default=5)
     ap.set_defaults(func=campaigns.command_campaigns_apply_pack)
+
+
+def build_import_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("import")
+    ps = p.add_subparsers(dest="import_command", required=True)
+
+    v = ps.add_parser("vacancy")
+    v.add_argument("--title", required=True)
+    v.add_argument("--company", required=True)
+    v.add_argument("--url", required=True)
+    v.add_argument("--area", default="")
+    v.add_argument("--description", default="")
+    v.add_argument("--salary-from", type=int, default=None)
+    v.add_argument("--salary-to", type=int, default=None)
+    v.add_argument("--currency", default="")
+    v.add_argument("--schedule", default="")
+    v.add_argument("--preset")
+    v.add_argument("--notes", default="")
+    v.set_defaults(func=import_vacancy.command_import_vacancy)
+
+    c = ps.add_parser("csv")
+    c.add_argument("path")
+    c.set_defaults(func=import_vacancy.command_import_csv)
+
+    j = ps.add_parser("jsonl")
+    j.add_argument("path")
+    j.set_defaults(func=import_vacancy.command_import_jsonl)
+
+    t = ps.add_parser("text-file")
+    t.add_argument("path")
+    t.set_defaults(func=import_vacancy.command_import_text_file)
