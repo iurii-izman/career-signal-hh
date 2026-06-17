@@ -29,17 +29,18 @@ def _load_raw() -> dict:
 def _save_raw(data: dict) -> None:
     Path(PRESETS_PATH).parent.mkdir(parents=True, exist_ok=True)
     with open(PRESETS_PATH, "w", encoding="utf-8") as f:
-        yaml.safe_dump(
-            data, f, allow_unicode=True, default_flow_style=False, sort_keys=False
-        )
+        yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
 def _backup() -> Path:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dst = BACKUPS_DIR / f"search_presets_{ts}.yaml"
-    if Path(PRESETS_PATH).exists():
-        shutil.copy2(PRESETS_PATH, dst)
+    try:
+        if Path(PRESETS_PATH).exists():
+            shutil.copy2(PRESETS_PATH, dst)
+    except OSError as exc:
+        console.print(f"[yellow]Backup warning: {exc}[/yellow]")
     return dst
 
 
@@ -93,12 +94,8 @@ def command_presets_list(_: argparse.Namespace) -> int:
         terms = len(p.get("search_terms", []))
         remote = "yes" if p.get("remote_only") else "no"
         areas = "all" if not p.get("areas") else str(len(p.get("areas", [])))
-        inc = len(p.get("include", {}).get("any", [])) + len(
-            p.get("include", {}).get("title", [])
-        )
-        exc = len(p.get("exclude", {}).get("any", [])) + len(
-            p.get("exclude", {}).get("title", [])
-        )
+        inc = len(p.get("include", {}).get("any", [])) + len(p.get("include", {}).get("title", []))
+        exc = len(p.get("exclude", {}).get("any", [])) + len(p.get("exclude", {}).get("title", []))
         desc = p.get("description", "")[:60]
         table.add_row(
             name,
@@ -131,9 +128,7 @@ def command_presets_show(args: argparse.Namespace) -> int:
     table.add_row("Remote only", str(preset.get("remote_only", True)))
     table.add_row(
         "Areas",
-        "all"
-        if not preset.get("areas")
-        else ", ".join(map(str, preset.get("areas", []))),
+        "all" if not preset.get("areas") else ", ".join(map(str, preset.get("areas", []))),
     )
     table.add_row("Schedule", ", ".join(preset.get("schedule", [])) or "-")
     table.add_row("Experience", ", ".join(preset.get("experience", [])) or "-")
@@ -207,9 +202,7 @@ def command_presets_create(args: argparse.Namespace) -> int:
     data = _load_raw()
     presets = data.setdefault("presets", {})
     if args.name in presets and not args.overwrite:
-        console.print(
-            f"[red]Preset '{args.name}' already exists. Use --overwrite.[/red]"
-        )
+        console.print(f"[red]Preset '{args.name}' already exists. Use --overwrite.[/red]")
         return 1
     terms = [t.strip() for t in (args.terms or "").split(",") if t.strip()]
     inc = [k.strip() for k in (args.include or "").split(",") if k.strip()]
@@ -243,9 +236,7 @@ def command_presets_clone(args: argparse.Namespace) -> int:
         console.print(f"[red]Source preset '{args.source}' not found.[/red]")
         return 1
     if args.new_name in presets and not args.overwrite:
-        console.print(
-            f"[red]Target '{args.new_name}' already exists. Use --overwrite.[/red]"
-        )
+        console.print(f"[red]Target '{args.new_name}' already exists. Use --overwrite.[/red]")
         return 1
     import copy
 
@@ -257,9 +248,7 @@ def command_presets_clone(args: argparse.Namespace) -> int:
     return 0
 
 
-def _modify_list(
-    data: dict, name: str, action: str, path: list[str], value: str
-) -> int:
+def _modify_list(data: dict, name: str, action: str, path: list[str], value: str) -> int:
     presets = data.setdefault("presets", {})
     if name not in presets:
         console.print(f"[red]Preset '{name}' not found.[/red]")
@@ -332,9 +321,7 @@ def command_presets_save_adhoc(args: argparse.Namespace) -> int:
     data = _load_raw()
     presets = data.setdefault("presets", {})
     if args.name in presets and not args.overwrite:
-        console.print(
-            f"[red]Preset '{args.name}' already exists. Use --overwrite.[/red]"
-        )
+        console.print(f"[red]Preset '{args.name}' already exists. Use --overwrite.[/red]")
         return 1
     preset = {
         "enabled": True,
