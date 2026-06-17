@@ -530,19 +530,39 @@ python -m src.main analytics export
 
 Анализ review-данных для улучшения presets без ML.
 
+Analyze:
+- keywords по полям (title/skills/description/snippet/excluded);
+- preset performance (good/bad rate);
+- score bucket quality (0-24, 25-49, 50-69, 70-84, 85-100);
+- search term / query performance.
+
 ```powershell
-# Анализ: какие keywords у accepted vs rejected
+# Полный анализ
 python -m src.main calibrate analyze
 
-# Сгенерировать предложения по улучшению preset
+# Сгенерировать предложения (с дедупликацией)
 python -m src.main calibrate suggest --preset ai_rag_remote
 
-# Применить предложение (с бэкапом YAML)
-python -m src.main calibrate apply --preset ai_rag_remote --suggestion-id abc123
+# Применить предложение (с бэкапом YAML и diff-like выводом)
+python -m src.main calibrate apply --suggestion-id abc123 --yes
 
-# Экспорт отчёта
+# Отклонить предложение
+python -m src.main calibrate dismiss --suggestion-id abc123
+
+# Экспорт отчёта (JSON + CSV + HTML с keyword lift table)
 python -m src.main calibrate export
 ```
+
+Suggestion types:
+- `add_exclude` / `add_title_exclude` — убрать шумный keyword;
+- `add_boost` / `add_penalty` — усилить или ослабить keyword;
+- `add_title_include` — добавить keyword в include.title;
+- `remove_search_term` — удалить неэффективный поисковый запрос;
+- `lower_search_term_priority` — понизить приоритет запроса.
+
+Статусы: `pending` → `applied` (после apply) или `dismissed`.
+Дубликаты (preset + type + keyword + pending/applied) автоматически
+пропускаются при suggest.
 
 Рекомендуемый workflow:
 ```powershell
@@ -552,7 +572,8 @@ python -m src.main calibrate suggest --preset ai_rag_remote
 python -m src.main calibrate export
 ```
 
-Не применяет изменения автоматически — всегда требует `--apply` или `--yes`.
+Не применяет изменения автоматически — всегда требует `--yes`.
+Бэкап YAML сохраняется в `config/backups/` перед каждым apply.
 
 ## Scoring v2 (explainable)
 

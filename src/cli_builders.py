@@ -313,10 +313,13 @@ def build_calibrate_parser(sub: argparse._SubParsersAction) -> None:
     s.add_argument("--preset")
     s.set_defaults(func=calibrate.command_calibrate_suggest)
     a = ps.add_parser("apply")
-    a.add_argument("--preset", required=True)
+    a.add_argument("--preset", help="Preset name (detected from suggestion if omitted)")
     a.add_argument("--suggestion-id", required=True)
     a.add_argument("-y", "--yes", action="store_true")
     a.set_defaults(func=calibrate.command_calibrate_apply)
+    d = ps.add_parser("dismiss")
+    d.add_argument("--suggestion-id", required=True)
+    d.set_defaults(func=calibrate.command_calibrate_dismiss)
     ps.add_parser("export").set_defaults(func=calibrate.command_calibrate_export)
 
 
