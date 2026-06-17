@@ -14,4 +14,6 @@ exports/*.csv
 exports/*.jsonl
 exports/*.json
 exports/apply_packs/
+exports/llm_prompts/
+exports/reports/
 .ruff_cache/
