@@ -12,8 +12,14 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 
 
 def load_search_profiles(path: str | Path = "config/search_profiles.yaml") -> dict[str, Any]:
-    return load_yaml(path).get("profiles", {})
+    try:
+        return load_yaml(path).get("profiles", {})
+    except (OSError, yaml.YAMLError):
+        return {}
 
 
 def load_scoring_rules(path: str | Path = "config/scoring_rules.yaml") -> dict[str, Any]:
-    return load_yaml(path)
+    try:
+        return load_yaml(path)
+    except (OSError, yaml.YAMLError):
+        return {}

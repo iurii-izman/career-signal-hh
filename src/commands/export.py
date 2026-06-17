@@ -12,17 +12,21 @@ console = Console()
 
 
 def command_export(args: argparse.Namespace) -> int:
-    storage, _, _ = _services()
-    # --preset is an alias for --profile
-    profile = args.preset or args.profile
-    rows = storage.list_vacancies(args.min_score, profile, args.days)
+    try:
+        storage, _, _ = _services()
+        # --preset is an alias for --profile
+        profile = args.preset or args.profile
+        rows = storage.list_vacancies(args.min_score, profile, args.days)
 
-    # Fetch cluster info for HTML dedupe filter
-    ids = [r["id"] for r in rows]
-    cluster_map = storage.get_clusters_for_vacancies(ids) if ids else {}
+        # Fetch cluster info for HTML dedupe filter
+        ids = [r["id"] for r in rows]
+        cluster_map = storage.get_clusters_for_vacancies(ids) if ids else {}
 
-    export_html(rows, "exports/vacancies_report.html", cluster_map)
-    export_csv(rows, "exports/vacancies.csv")
-    export_jsonl(rows, "exports/vacancies.jsonl")
-    console.print(f"[green]Экспортировано вакансий: {len(rows)}[/green]")
-    return 0
+        export_html(rows, "exports/vacancies_report.html", cluster_map)
+        export_csv(rows, "exports/vacancies.csv")
+        export_jsonl(rows, "exports/vacancies.jsonl")
+        console.print(f"[green]Экспортировано вакансий: {len(rows)}[/green]")
+        return 0
+    except Exception as exc:
+        console.print(f"[red]Export error: {exc}[/red]")
+        return 1

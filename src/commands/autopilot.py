@@ -77,7 +77,10 @@ def command_autopilot_daily(args: argparse.Namespace) -> int:
         from .db import command_db_backup
 
         console.print("[bold]Creating backup...[/bold]")
-        command_db_backup(argparse.Namespace())
+        try:
+            command_db_backup(argparse.Namespace())
+        except Exception as exc:
+            console.print(f"[yellow]Backup warning: {exc}[/yellow]")
 
     # 4. Search
     search_ok = True
@@ -154,29 +157,32 @@ def command_autopilot_daily(args: argparse.Namespace) -> int:
             console.print(f"[yellow]Queue warning: {exc}[/yellow]")
 
     # 8. Summary
-    storage, _, _ = _services()
-    stats = storage.stats()
-    latest = storage.list_vacancies(limit=5)
+    try:
+        storage, _, _ = _services()
+        stats = storage.stats()
+        latest = storage.list_vacancies(limit=5)
 
-    table = Table(title="Autopilot Daily Summary")
-    table.add_column("Metric")
-    table.add_column("Value")
-    table.add_row("Mode", mode)
-    table.add_row("Preset", args.preset or "all")
-    table.add_row("Search", "OK" if search_ok else "FAILED/SKIPPED")
-    table.add_row("Doctor", "OK" if doctor_ok else "WARNINGS")
-    table.add_row("Export", "OK")
-    table.add_row("Total vacancies", str(stats["total"]))
-    table.add_row("New 24h", str(stats["new_24h"]))
-    table.add_row("Avg score", f"{stats['avg_score']:.0f}")
-    table.add_row("Remote", str(stats["remote"]))
-    table.add_row("With salary", str(stats["with_salary"]))
-    if latest:
-        table.add_row(
-            "Top vacancy",
-            f"{latest[0].get('name', '?')} (score {latest[0].get('total_score', 0)})",
-        )
-    console.print(table)
+        table = Table(title="Autopilot Daily Summary")
+        table.add_column("Metric")
+        table.add_column("Value")
+        table.add_row("Mode", mode)
+        table.add_row("Preset", args.preset or "all")
+        table.add_row("Search", "OK" if search_ok else "FAILED/SKIPPED")
+        table.add_row("Doctor", "OK" if doctor_ok else "WARNINGS")
+        table.add_row("Export", "OK")
+        table.add_row("Total vacancies", str(stats["total"]))
+        table.add_row("New 24h", str(stats["new_24h"]))
+        table.add_row("Avg score", f"{stats['avg_score']:.0f}")
+        table.add_row("Remote", str(stats["remote"]))
+        table.add_row("With salary", str(stats["with_salary"]))
+        if latest:
+            table.add_row(
+                "Top vacancy",
+                f"{latest[0].get('name', '?')} (score {latest[0].get('total_score', 0)})",
+            )
+        console.print(table)
+    except Exception as exc:
+        console.print(f"[yellow]Summary warning: {exc}[/yellow]")
 
     return 0 if search_ok else 1
 

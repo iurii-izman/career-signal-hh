@@ -49,7 +49,11 @@ def _services() -> tuple[Storage, HHClient, dict[str, Any]]:
     load_dotenv()
     storage = Storage(os.getenv("DB_PATH", "data/vacancies.sqlite"))
     client = HHClient()
-    return storage, client, load_scoring_rules()
+    try:
+        rules = load_scoring_rules()
+    except Exception:
+        rules = {}
+    return storage, client, rules
 
 
 def _short_body(value: Any) -> str:

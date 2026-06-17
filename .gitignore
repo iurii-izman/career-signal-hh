@@ -14,3 +14,4 @@ exports/*.csv
 exports/*.jsonl
 exports/*.json
 exports/apply_packs/
+.ruff_cache/

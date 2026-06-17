@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
@@ -30,9 +31,7 @@ console = Console()
 def _resolve_search_config(args: argparse.Namespace) -> dict[str, Any]:
     mode = args.mode or "normal"
     if mode not in SEARCH_MODES:
-        console.print(
-            f"[yellow]Неизвестный режим {mode!r}, используется normal.[/yellow]"
-        )
+        console.print(f"[yellow]Неизвестный режим {mode!r}, используется normal.[/yellow]")
         mode = "normal"
     cfg = SEARCH_MODES[mode].copy()
     if args.max_pages is not None:
@@ -127,14 +126,10 @@ def command_search(args: argparse.Namespace) -> int:
         include_list = [k.strip() for k in (args.include or "").split(",") if k.strip()]
         exclude_list = [k.strip() for k in (args.exclude or "").split(",") if k.strip()]
         if not include_list:
-            console.print(
-                "[red]--adhoc requires --include with at least one keyword.[/red]"
-            )
+            console.print("[red]--adhoc requires --include with at least one keyword.[/red]")
             return 2
         remote_only = args.remote_only if args.remote_only is not None else True
-        preset = create_adhoc_preset(
-            include_list, exclude_list, remote_only=remote_only
-        )
+        preset = create_adhoc_preset(include_list, exclude_list, remote_only=remote_only)
         search_units = _build_preset_search_units(preset)
         search_config["_mode_name"] = f"adhoc ({preset['_name']})"
 
@@ -171,13 +166,9 @@ def command_search(args: argparse.Namespace) -> int:
             try:
                 profiles = load_search_profiles()
             except (OSError, ValueError, yaml.YAMLError) as exc:
-                console.print(
-                    f"[red]Не удалось прочитать поисковые профили: {exc}[/red]"
-                )
+                console.print(f"[red]Не удалось прочитать поисковые профили: {exc}[/red]")
                 return 2
-            profiles = {
-                n: v for n, v in profiles.items() if v and v.get("enabled", True)
-            }
+            profiles = {n: v for n, v in profiles.items() if v and v.get("enabled", True)}
             if not profiles:
                 console.print("[red]Нет enabled profiles или presets.[/red]")
                 return 2
@@ -195,9 +186,7 @@ def command_search(args: argparse.Namespace) -> int:
         client = HHClient()
         estimate_selected = _build_estimate_selected(search_units)
         print_run_estimate(estimate_selected, search_config, client)
-        console.print(
-            "\n[bold green]Dry-run complete. No API requests were made.[/bold green]"
-        )
+        console.print("\n[bold green]Dry-run complete. No API requests were made.[/bold green]")
         return 0
 
     # Real run
@@ -276,9 +265,7 @@ def command_search(args: argparse.Namespace) -> int:
                     break
 
                 try:
-                    result = client.search_vacancies(
-                        query, area, page, per_page, params
-                    )
+                    result = client.search_vacancies(query, area, page, per_page, params)
                 except HHBudgetExceeded:
                     console.print(
                         "[yellow]Request budget reached. Partial results were saved.[/yellow]"
@@ -317,9 +304,7 @@ def command_search(args: argparse.Namespace) -> int:
                                     vacancy = Vacancy.from_hh(summary, profile_name)
                                     is_new = storage.upsert_vacancy(vacancy)
                                     _score_and_store(storage, vacancy, rules, unit)
-                                    counters[
-                                        "new_count" if is_new else "updated_count"
-                                    ] += 1
+                                    counters["new_count" if is_new else "updated_count"] += 1
                                 counters["loaded_count"] += 1
                                 continue
 
@@ -333,9 +318,7 @@ def command_search(args: argparse.Namespace) -> int:
                             counters["updated_count"] += 1
                             counters["loaded_count"] += 1
                             if verbose:
-                                console.print(
-                                    f"    skip: {summary.get('name', '')[:60]}"
-                                )
+                                console.print(f"    skip: {summary.get('name', '')[:60]}")
                             continue
 
                         is_new = storage.upsert_vacancy(vacancy)
@@ -350,7 +333,7 @@ def command_search(args: argparse.Namespace) -> int:
                         run_counters["skipped_by_budget"] += 1
                         stop_all = True
                         break
-                    except (HHAPIError, ValueError) as exc:
+                    except (HHAPIError, ValueError, sqlite3.Error) as exc:
                         logging.warning("Вакансия %s пропущена: %s", vacancy_id, exc)
 
                 if page + 1 >= int(result.get("pages", 0)) or not items:
@@ -387,24 +370,23 @@ def command_search(args: argparse.Namespace) -> int:
         for key in ("new_count", "updated_count"):
             run_counters[key] += counters[key]
 
-        storage.add_search_run(
-            {
-                "started_at": started,
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-                "profile_name": profile_name,
-                "query": query,
-                "area_id": str(area) if area is not None else None,
-                **counters,
-                "error": error,
-            }
-        )
-        console.print(
-            f"{profile_name}: {query} / {area}: {counters['loaded_count']} загружено"
-        )
+        try:
+            storage.add_search_run(
+                {
+                    "started_at": started,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "profile_name": profile_name,
+                    "query": query,
+                    "area_id": str(area) if area is not None else None,
+                    **counters,
+                    "error": error,
+                }
+            )
+        except sqlite3.Error as exc:
+            logging.error("Failed to save search run record: %s", exc)
+        console.print(f"{profile_name}: {query} / {area}: {counters['loaded_count']} загружено")
 
-    print_run_summary(
-        run_started, search_config, client, profiles_processed, run_counters
-    )
+    print_run_summary(run_started, search_config, client, profiles_processed, run_counters)
     return exit_code
 
 

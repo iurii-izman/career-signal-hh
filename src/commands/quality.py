@@ -17,7 +17,11 @@ console = Console()
 
 
 def command_quality_duplicates(_: argparse.Namespace) -> int:
-    storage, _, _ = _services()
+    try:
+        storage, _, _ = _services()
+    except Exception as exc:
+        console.print(f"[red]Failed to initialise services: {exc}[/red]")
+        return 1
     rows = storage.list_vacancies(limit=9999)
     clusters = find_duplicates(rows)
 
@@ -48,7 +52,11 @@ def command_quality_duplicates(_: argparse.Namespace) -> int:
 
 
 def command_quality_cluster(_: argparse.Namespace) -> int:
-    storage, _, _ = _services()
+    try:
+        storage, _, _ = _services()
+    except Exception as exc:
+        console.print(f"[red]Failed to initialise services: {exc}[/red]")
+        return 1
     rows = storage.list_vacancies(limit=9999)
     clusters = find_duplicates(rows)
 
@@ -77,24 +85,32 @@ def command_quality_cluster(_: argparse.Namespace) -> int:
     console.print(f"[green]Saved {len(aliases)} employer alias groups to SQLite[/green]")
 
     # Also save clusters to JSON as secondary artifact
-    out = Path("data/vacancy_clusters.json")
-    cluster_data = []
-    for c in clusters:
-        cluster_data.append(
-            {
-                "cluster_id": c["cluster_id"],
-                "reason": c["reason"],
-                "vacancy_ids": c["vacancy_ids"],
-                "similarity": c["similarity"],
-            }
-        )
-    out.write_text(json.dumps(cluster_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    console.print(f"[dim]Also saved {len(cluster_data)} clusters to {out}[/dim]")
+    try:
+        out = Path("data/vacancy_clusters.json")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        cluster_data = []
+        for c in clusters:
+            cluster_data.append(
+                {
+                    "cluster_id": c["cluster_id"],
+                    "reason": c["reason"],
+                    "vacancy_ids": c["vacancy_ids"],
+                    "similarity": c["similarity"],
+                }
+            )
+        out.write_text(json.dumps(cluster_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"[dim]Also saved {len(cluster_data)} clusters to {out}[/dim]")
+    except OSError as exc:
+        console.print(f"[red]Failed to save clusters JSON: {exc}[/red]")
     return 0
 
 
 def command_quality_report(_: argparse.Namespace) -> int:
-    storage, _, _ = _services()
+    try:
+        storage, _, _ = _services()
+    except Exception as exc:
+        console.print(f"[red]Failed to initialise services: {exc}[/red]")
+        return 1
     rows = storage.list_vacancies(limit=9999)
     clusters = find_duplicates(rows)
 
@@ -142,7 +158,11 @@ def command_quality_report(_: argparse.Namespace) -> int:
 
 
 def command_quality_export(_: argparse.Namespace) -> int:
-    storage, _, _ = _services()
+    try:
+        storage, _, _ = _services()
+    except Exception as exc:
+        console.print(f"[red]Failed to initialise services: {exc}[/red]")
+        return 1
     rows = storage.list_vacancies(limit=9999)
     clusters = find_duplicates(rows)
 
@@ -158,13 +178,16 @@ def command_quality_export(_: argparse.Namespace) -> int:
             )
 
     tp = out / "duplicates.csv"
-    tp.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", newline="", delete=False, dir=tp.parent
-    ) as h:
-        _write_dup(h)
-        os.replace(h.name, tp)
-    console.print(f"[green]duplicates.csv ({len(clusters)} clusters)[/green]")
+    try:
+        tp.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", newline="", delete=False, dir=tp.parent
+        ) as h:
+            _write_dup(h)
+            os.replace(h.name, tp)
+        console.print(f"[green]duplicates.csv ({len(clusters)} clusters)[/green]")
+    except OSError as exc:
+        console.print(f"[red]Failed to write duplicates.csv: {exc}[/red]")
 
     # Employer aliases CSV
     norm_emps: dict[str, list[str]] = {}
@@ -182,12 +205,15 @@ def command_quality_export(_: argparse.Namespace) -> int:
             w.writerow([k, "; ".join(v)])
 
     tp2 = out / "employer_aliases.csv"
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", newline="", delete=False, dir=tp2.parent
-    ) as h:
-        _write_emp(h)
-        os.replace(h.name, tp2)
-    console.print(f"[green]employer_aliases.csv ({len(aliases)} groups)[/green]")
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", newline="", delete=False, dir=tp2.parent
+        ) as h:
+            _write_emp(h)
+            os.replace(h.name, tp2)
+        console.print(f"[green]employer_aliases.csv ({len(aliases)} groups)[/green]")
+    except OSError as exc:
+        console.print(f"[red]Failed to write employer_aliases.csv: {exc}[/red]")
 
     # HTML
     rows_html = "".join(
@@ -201,6 +227,9 @@ h1{{color:#67e8f9}} table{{width:100%;border-collapse:collapse}} th,td{{padding:
 <h2>Duplicates ({len(clusters)})</h2>
 <table><tr><th>Cluster</th><th>Reason</th><th>Count</th></tr>{rows_html}</table>
 </body></html>"""
-    (out / "data_quality_report.html").write_text(html, encoding="utf-8")
-    console.print(f"[green]data_quality_report.html[/green]")
+    try:
+        (out / "data_quality_report.html").write_text(html, encoding="utf-8")
+        console.print(f"[green]data_quality_report.html[/green]")
+    except OSError as exc:
+        console.print(f"[red]Failed to write data_quality_report.html: {exc}[/red]")
     return 0

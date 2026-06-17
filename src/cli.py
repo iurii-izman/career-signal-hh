@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from .cli_builders import build_all_parsers
 
@@ -13,5 +14,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
-    return int(args.func(args))
+    try:
+        args = build_parser().parse_args()
+        return int(args.func(args))
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
