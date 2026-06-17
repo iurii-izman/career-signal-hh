@@ -169,7 +169,7 @@ def command_calibrate_analyze(_: argparse.Namespace) -> int:
     reviewed = good_total + bad_total + neutral_total
 
     # ── Header ──
-    console.print(f"\n[bold]Calibration Analysis[/bold]\n")
+    console.print("\n[bold]Calibration Analysis[/bold]\n")
     console.print(
         f"  Reviewed: {reviewed}  "
         f"[green]Good: {good_total}[/green]  "

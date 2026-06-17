@@ -11,7 +11,6 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
-from ..config import _services
 from ..utils import json_loads
 
 console = Console()
@@ -41,9 +40,7 @@ def command_analytics_summary(_: argparse.Namespace) -> int:
         new_30d = conn.execute(
             "SELECT COUNT(*) FROM vacancies WHERE datetime(first_seen_at) >= datetime('now','-30 days')"
         ).fetchone()[0]
-        avg_score = conn.execute(
-            "SELECT COALESCE(AVG(total_score),0) FROM scores"
-        ).fetchone()[0]
+        avg_score = conn.execute("SELECT COALESCE(AVG(total_score),0) FROM scores").fetchone()[0]
         strong = conn.execute(
             "SELECT COUNT(*) FROM score_details WHERE decision='strong_match'"
         ).fetchone()[0]
@@ -164,15 +161,15 @@ def command_analytics_salary(_: argparse.Namespace) -> int:
         with_salary = conn.execute(
             "SELECT COUNT(*) FROM vacancies WHERE salary_from IS NOT NULL OR salary_to IS NOT NULL"
         ).fetchone()[0]
-        rur = conn.execute(
-            "SELECT COUNT(*) FROM vacancies WHERE salary_currency='RUR'"
-        ).fetchone()[0]
-        usd = conn.execute(
-            "SELECT COUNT(*) FROM vacancies WHERE salary_currency='USD'"
-        ).fetchone()[0]
-        eur = conn.execute(
-            "SELECT COUNT(*) FROM vacancies WHERE salary_currency='EUR'"
-        ).fetchone()[0]
+        rur = conn.execute("SELECT COUNT(*) FROM vacancies WHERE salary_currency='RUR'").fetchone()[
+            0
+        ]
+        usd = conn.execute("SELECT COUNT(*) FROM vacancies WHERE salary_currency='USD'").fetchone()[
+            0
+        ]
+        eur = conn.execute("SELECT COUNT(*) FROM vacancies WHERE salary_currency='EUR'").fetchone()[
+            0
+        ]
         avg_from = conn.execute(
             "SELECT COALESCE(AVG(salary_from),0) FROM vacancies WHERE salary_from IS NOT NULL"
         ).fetchone()[0]
@@ -185,9 +182,9 @@ def command_analytics_salary(_: argparse.Namespace) -> int:
         mid = conn.execute(
             "SELECT COUNT(*) FROM vacancies WHERE salary_from BETWEEN 100001 AND 300000"
         ).fetchone()[0]
-        high = conn.execute(
-            "SELECT COUNT(*) FROM vacancies WHERE salary_from > 300000"
-        ).fetchone()[0]
+        high = conn.execute("SELECT COUNT(*) FROM vacancies WHERE salary_from > 300000").fetchone()[
+            0
+        ]
 
     table = Table(title="Salary Analytics")
     table.add_column("Metric")
@@ -265,7 +262,6 @@ def command_analytics_funnel(_: argparse.Namespace) -> int:
     table.add_column("Stage")
     table.add_column("Count")
     table.add_column("% of Total")
-    prev = total
     for name, where in stages:
         with storage.connect() as conn:
             cnt = conn.execute(
@@ -297,9 +293,7 @@ def command_analytics_export(_: argparse.Namespace) -> int:
         new_24h = conn.execute(
             "SELECT COUNT(*) FROM vacancies WHERE datetime(first_seen_at) >= datetime('now','-1 day')"
         ).fetchone()[0]
-        avg_score = conn.execute(
-            "SELECT COALESCE(AVG(total_score),0) FROM scores"
-        ).fetchone()[0]
+        avg_score = conn.execute("SELECT COALESCE(AVG(total_score),0) FROM scores").fetchone()[0]
         applied = conn.execute(
             "SELECT COUNT(*) FROM vacancy_reviews WHERE status='applied'"
         ).fetchone()[0]
@@ -317,10 +311,8 @@ def command_analytics_export(_: argparse.Namespace) -> int:
         "interview": interview,
         "offer": offer,
     }
-    _atomic_write(
-        out / "analytics_summary.json", lambda h: json.dump(summary, h, indent=2)
-    )
-    console.print(f"[green]analytics_summary.json[/green]")
+    _atomic_write(out / "analytics_summary.json", lambda h: json.dump(summary, h, indent=2))
+    console.print("[green]analytics_summary.json[/green]")
 
     # Skills CSV
     skill_counts: dict[str, int] = {}
@@ -365,8 +357,7 @@ def command_analytics_export(_: argparse.Namespace) -> int:
     # HTML report
     skills_html = "".join(f"<tr><td>{s}</td><td>{c}</td></tr>" for s, c in items[:20])
     emp_html = "".join(
-        f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]:.0f}</td></tr>"
-        for r in emp_rows[:20]
+        f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]:.0f}</td></tr>" for r in emp_rows[:20]
     )
     html = f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -389,5 +380,5 @@ th,td{{padding:8px 12px;text-align:left;border-bottom:1px solid #26324d}} th{{co
 <table><tr><th>Employer</th><th>Vacancies</th><th>Avg Score</th></tr>{emp_html}</table>
 </body></html>"""
     (out / "analytics_report.html").write_text(html, encoding="utf-8")
-    console.print(f"[green]analytics_report.html[/green]")
+    console.print("[green]analytics_report.html[/green]")
     return 0

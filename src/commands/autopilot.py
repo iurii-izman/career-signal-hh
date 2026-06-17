@@ -81,8 +81,6 @@ def command_autopilot_daily(args: argparse.Namespace) -> int:
 
     # 4. Search
     search_ok = True
-    new_count = 0
-    updated_count = 0
     if not args.skip_search:
         from .search import command_search
 
@@ -134,7 +132,6 @@ def command_autopilot_daily(args: argparse.Namespace) -> int:
             console.print(f"[yellow]Export warning: {exc}[/yellow]")
 
     # 7. Queue
-    queue_count = 0
     if not args.skip_queue:
         from .review import command_review_queue
 

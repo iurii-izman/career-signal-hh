@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from . import db_migrations  # noqa: E402 — circular-safe, used in __init__
-from .models import ScoreDetails, ScoreResult, Vacancy
+from .models import ScoreResult, Vacancy
 from .utils import json_dumps
 
 SCHEMA = """
@@ -118,35 +118,6 @@ class Storage:
             connection.commit()
         finally:
             connection.close()
-
-    def _ensure_score_details_work_format(self) -> None:
-        """Add work_format_flags_json column if missing (migration-safe)."""
-        with self.connect() as connection:
-            cols = [r[1] for r in connection.execute("PRAGMA table_info(score_details)").fetchall()]
-            if "work_format_flags_json" not in cols:
-                connection.execute(
-                    "ALTER TABLE score_details ADD COLUMN work_format_flags_json TEXT NOT NULL DEFAULT '[]'"
-                )
-
-    def ensure_review_schema(self) -> None:
-        with self.connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS vacancy_reviews (
-                    vacancy_id TEXT PRIMARY KEY,
-                    status TEXT NOT NULL DEFAULT 'new',
-                    priority INTEGER NULL,
-                    user_notes TEXT NULL,
-                    cover_letter_draft TEXT NULL,
-                    applied_at TEXT NULL,
-                    next_action TEXT NULL,
-                    next_action_at TEXT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_reviews_status
-                ON vacancy_reviews(status);
-                """
-            )
 
     def _require_vacancy(self, vacancy_id: str) -> None:
         if not self.vacancy_exists(vacancy_id):

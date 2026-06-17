@@ -103,7 +103,6 @@ def _build_fit_summary(details: dict | None, vacancy: dict, lang: str) -> dict[s
     total = details.get("total_score", 0) if details else 0
     decision = details.get("decision", "") if details else ""
     matched = json_loads(details.get("matched_keywords_json"), []) if details else []
-    category = json_loads(details.get("category_scores_json"), {}) if details else {}
     risks = (
         json_loads(details.get("risk_flags_json"), [])
         if details
@@ -201,13 +200,11 @@ def _generate_md(
         if details
         else json_loads(vacancy.get("risk_flags_json"), [])
     )
-    work = json_loads(vacancy.get("work_format_flags_json"), [])
 
     salary = _fmt_salary(vacancy, lang)
     schedule = vacancy.get("schedule_name") or ""
     experience = vacancy.get("experience_name") or ""
     published = (vacancy.get("published_at") or "")[:10]
-    desc = vacancy.get("description_text") or ""
 
     # Candidate data
     candidate_name = _load_candidate_text(lang, "name", preset)
