@@ -68,6 +68,11 @@ def command_cockpit_export(_: argparse.Namespace) -> int:
     sample_count = sum(1 for r in all_rows if (r.get("id") or "").startswith("sample-"))
     missing_scores = sum(1 for r in all_rows if not r.get("total_score"))
 
+    # DB-stored quality counts (may differ if clusters were saved)
+    db_clusters = storage.count_clusters()
+    db_dup_count = storage.count_duplicate_vacancies()
+    db_aliases = storage.count_employer_aliases()
+
     # Build sections
     header_cards = f"""
     <div class="row">
@@ -153,9 +158,11 @@ th{{color:#fde68a}} a{{color:#bfdbfe}} code{{background:#10182a;padding:1px 6px;
 <div class="row">
   <div class="stat"><strong>{sample_count}</strong><span>Sample vacancies</span></div>
   <div class="stat"><strong>{missing_scores}</strong><span>Missing scores</span></div>
-  <div class="stat"><strong>{dup_count}</strong><span>Duplicate clusters</span></div>
-  <div class="stat"><strong>{with_salary}</strong><span>With salary</span></div>
+  <div class="stat"><strong>{db_clusters}</strong><span>Clusters (DB)</span></div>
+  <div class="stat"><strong>{db_dup_count}</strong><span>Dup vacancies (DB)</span></div>
+  <div class="stat"><strong>{db_aliases}</strong><span>Employer aliases</span></div>
 </div>
+<p style="color:var(--muted);margin:0 0 12px">Live scan: {dup_count} clusters · {with_salary} with salary</p>
 
 <h2>📁 Reports</h2>
 {links_html}
@@ -167,7 +174,7 @@ th{{color:#fde68a}} a{{color:#bfdbfe}} code{{background:#10182a;padding:1px 6px;
 <code>python -m src.main apply-pack --top 5 --decision strong_match</code>
 <code>python -m src.main analytics export</code>
 <code>python -m src.main db backup</code>
-<code>python -m src.main quality report</code>
+<code>python -m src.main quality cluster</code>
 <code>python -m src.main calibrate analyze</code>
 </div>
 

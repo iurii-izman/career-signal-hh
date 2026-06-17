@@ -362,6 +362,40 @@ python -m src.main version
 # Release checklist: RELEASE_CHECKLIST.md
 ```
 
+## Data quality persistence
+
+Duplicate detection and employer aliases are persisted in SQLite
+(tables `vacancy_clusters`, `employer_aliases`).
+
+```powershell
+# Find and display duplicates
+python -m src.main quality duplicates
+
+# Save clusters + employer aliases to SQLite
+python -m src.main quality cluster
+
+# Full quality report (reads from DB if clusters are saved)
+python -m src.main quality report
+
+# Export CSVs and HTML report
+python -m src.main quality export
+```
+
+Clusters are used by:
+
+- **Review queue** `--dedupe` — показывает только лучшую вакансию
+  из каждого кластера:
+  ```powershell
+  python -m src.main review queue --dedupe --min-score 70
+  ```
+- **HTML export** — добавляет `data-cluster` атрибут и чекбокс
+  «Hide duplicates» в фильтры.
+- **Cockpit** — показывает counts кластеров и employer aliases
+  в секции Data Quality.
+
+Re-run `quality cluster` при изменении данных — таблицы полностью
+перезаписываются (идемпотентно).
+
 ## Поисковые профили
 
 Запросы, регионы и параметры находятся в

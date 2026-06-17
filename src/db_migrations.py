@@ -147,6 +147,30 @@ MIGRATIONS: list[MigrationEntry] = [
         CREATE INDEX IF NOT EXISTS idx_score_details_decision ON score_details(decision);
         """,
     ),
+    (
+        6,
+        "006_quality_tables",
+        """
+        CREATE TABLE IF NOT EXISTS employer_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL,
+            alias TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(canonical_name, alias)
+        );
+        CREATE TABLE IF NOT EXISTS vacancy_clusters (
+            cluster_id TEXT NOT NULL,
+            vacancy_id TEXT NOT NULL,
+            cluster_reason TEXT NOT NULL,
+            similarity_score REAL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(cluster_id, vacancy_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_employer_aliases_canonical ON employer_aliases(canonical_name);
+        CREATE INDEX IF NOT EXISTS idx_vacancy_clusters_vacancy ON vacancy_clusters(vacancy_id);
+        CREATE INDEX IF NOT EXISTS idx_vacancy_clusters_cluster ON vacancy_clusters(cluster_id);
+        """,
+    ),
 ]
 
 # ── Schema migrations table ────────────────────────────────────────────────

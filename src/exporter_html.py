@@ -14,7 +14,9 @@ def _e(value: Any) -> str:
     return html.escape(str(value or ""))
 
 
-def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
+def export_html(
+    rows: list[dict[str, Any]], path: str | Path, clusters: dict[str, dict[str, Any]] | None = None
+) -> None:
     total = len(rows)
     top_score = max((row.get("total_score") or 0 for row in rows), default=0)
     new_24h = sum(1 for row in rows if row.get("first_seen_at", "") >= _day_ago_iso())
@@ -77,12 +79,21 @@ def export_html(rows: list[dict[str, Any]], path: str | Path) -> None:
             if row.get("next_action")
             else ""
         )
+
+        # Cluster attributes
+        cluster_attrs = ""
+        if clusters:
+            cinfo = clusters.get(row.get("id"))
+            if cinfo:
+                cid = cinfo.get("cluster_id", "")
+                cluster_attrs = f' data-cluster="{_e(cid)}"'
+
         cards.append(f"""
 <article class="vacancy" data-score="{row.get("total_score") or 0}"
  data-profile="{_e(row.get("best_profile"))}" data-remote="{str("remote" in work).lower()}"
  data-review="{_e(review_status)}" data-decision="{_e(decision)}"
  data-salary="{str(row.get("salary_from") is not None or row.get("salary_to") is not None).lower()}"
- data-search="{_e(search)}">
+ data-search="{_e(search)}"{cluster_attrs}>
  <div class="score">{row.get("total_score") or 0}</div>
  <div class="body">
   <div class="heading"><span class="badge">{_e(row.get("best_profile"))}</span>
@@ -128,17 +139,22 @@ p{{color:#cbd5e1;line-height:1.5}} @media(max-width:800px){{.summary{{grid-templ
 <select id="review"><option value="">Все review status</option><option>new</option><option>interesting</option><option>maybe</option><option>rejected</option><option>applied</option><option>interview</option><option>offer</option><option>archived</option></select>
 <label><input id="remote" type="checkbox"> Только remote</label><label><input id="salary" type="checkbox"> С зарплатой</label>
 <label><input id="low" type="checkbox"> Скрыть low match</label>
-<label><input id="hide_rejected" type="checkbox"> Скрыть rejected/archived</label></section>
+<label><input id="hide_rejected" type="checkbox"> Скрыть rejected/archived</label>
+<label><input id="hide_dupes" type="checkbox"> Hide duplicates</label></section>
 <section id="list">{"".join(cards)}</section></main><script>
-const controls=[q,min,profile,decision,review,remote,salary,low,hide_rejected];function filter(){{
+const controls=[q,min,profile,decision,review,remote,salary,low,hide_rejected,hide_dupes];function filter(){{
  const text=q.value.toLowerCase(), threshold=Number(min.value||0);
+ const seenClusters = new Set();
  document.querySelectorAll('.vacancy').forEach(v=>{{
+  const cluster = v.dataset.cluster;
   const show=v.dataset.search.includes(text)&&Number(v.dataset.score)>=threshold&&
    (!profile.value||v.dataset.profile===profile.value)&&(!review.value||v.dataset.review===review.value)&&
    (!decision.value||v.dataset.decision===decision.value)&&
    (!remote.checked||v.dataset.remote==='true')&&
    (!salary.checked||v.dataset.salary==='true')&&(!low.checked||v.dataset.profile!=='low_match')&&
-   (!hide_rejected.checked||(v.dataset.review!=='rejected'&&v.dataset.review!=='archived'));
+   (!hide_rejected.checked||(v.dataset.review!=='rejected'&&v.dataset.review!=='archived'))&&
+   (!hide_dupes.checked||!cluster||!seenClusters.has(cluster));
+  if (show && cluster && hide_dupes.checked) seenClusters.add(cluster);
   v.hidden=!show;
  }});
 }} controls.forEach(c=>c.addEventListener('input',filter));

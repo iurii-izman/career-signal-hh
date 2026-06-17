@@ -236,6 +236,7 @@ def build_review_parser(sub: argparse._SubParsersAction) -> None:
     q.add_argument("--with-salary", action="store_true")
     q.add_argument("--hide-risk", action="store_true")
     q.add_argument("--new-only", action="store_true")
+    q.add_argument("--dedupe", action="store_true", help="Show only best per duplicate cluster")
     q.set_defaults(func=review.command_review_queue)
     ps.add_parser("next-best").set_defaults(func=review.command_review_next_best)
     # Bulk

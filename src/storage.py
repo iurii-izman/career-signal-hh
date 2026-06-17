@@ -621,6 +621,113 @@ class Storage:
         with self.connect() as connection:
             return [dict(row) for row in connection.execute(sql, params).fetchall()]
 
+    # ------------------------------------------------------------------
+    # Data quality -- clusters and employer aliases
+    # ------------------------------------------------------------------
+
+    def replace_vacancy_clusters(self, clusters: list[dict]) -> None:
+        """Replace all vacancy_clusters rows with *clusters*."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            connection.execute("DELETE FROM vacancy_clusters")
+            for c in clusters:
+                for vid in c.get("vacancy_ids", []):
+                    connection.execute(
+                        "INSERT INTO vacancy_clusters"
+                        " (cluster_id, vacancy_id, cluster_reason, similarity_score, created_at)"
+                        " VALUES (?, ?, ?, ?, ?)",
+                        (
+                            c["cluster_id"],
+                            vid,
+                            c.get("reason", c.get("cluster_reason", "")),
+                            c.get("similarity") or c.get("similarity_score"),
+                            now,
+                        ),
+                    )
+
+    def replace_employer_aliases(self, aliases: dict[str, list[str]]) -> None:
+        """Replace employer_aliases table."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            connection.execute("DELETE FROM employer_aliases")
+            for canonical, variants in aliases.items():
+                for variant in variants:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO employer_aliases"
+                        " (canonical_name, alias, created_at) VALUES (?, ?, ?)",
+                        (canonical, variant, now),
+                    )
+
+    def get_cluster_for_vacancy(self, vacancy_id: str) -> dict[str, Any] | None:
+        """Return cluster info for a vacancy or None."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT vc.*, COUNT(*) OVER (PARTITION BY vc.cluster_id) cluster_size"
+                " FROM vacancy_clusters vc WHERE vc.vacancy_id = ?",
+                (vacancy_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_clusters_for_vacancies(self, vacancy_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Return {vacancy_id: cluster_info} for a batch of IDs."""
+        if not vacancy_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in vacancy_ids)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"SELECT vc.*, sub.cnt cluster_size"
+                f" FROM vacancy_clusters vc"
+                f" JOIN (SELECT cluster_id, COUNT(*) cnt FROM vacancy_clusters"
+                f" GROUP BY cluster_id) sub ON sub.cluster_id = vc.cluster_id"
+                f" WHERE vc.vacancy_id IN ({placeholders})",
+                vacancy_ids,
+            ).fetchall()
+        return {row["vacancy_id"]: dict(row) for row in rows}
+
+    def list_clusters(self) -> list[dict[str, Any]]:
+        """Return all clusters grouped by cluster_id with counts."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT vc.cluster_id, vc.cluster_reason,"
+                " COUNT(vc.vacancy_id) vacancy_count,"
+                " GROUP_CONCAT(vc.vacancy_id) vacancy_ids,"
+                " MAX(vc.similarity_score) similarity"
+                " FROM vacancy_clusters vc"
+                " GROUP BY vc.cluster_id"
+                " ORDER BY vacancy_count DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_employer_aliases(self) -> list[dict[str, Any]]:
+        """Return employer alias groups."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT canonical_name, GROUP_CONCAT(alias) aliases"
+                " FROM employer_aliases"
+                " GROUP BY canonical_name"
+                " ORDER BY canonical_name"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_clusters(self) -> int:
+        """Return number of distinct clusters."""
+        with self.connect() as connection:
+            return connection.execute(
+                "SELECT COUNT(DISTINCT cluster_id) FROM vacancy_clusters"
+            ).fetchone()[0]
+
+    def count_duplicate_vacancies(self) -> int:
+        """Return total number of vacancies that belong to any cluster."""
+        with self.connect() as connection:
+            return connection.execute("SELECT COUNT(*) FROM vacancy_clusters").fetchone()[0]
+
+    def count_employer_aliases(self) -> int:
+        """Return number of employer alias groups."""
+        with self.connect() as connection:
+            return connection.execute(
+                "SELECT COUNT(DISTINCT canonical_name) FROM employer_aliases"
+            ).fetchone()[0]
+
     def bulk_update_review_status(
         self,
         *,

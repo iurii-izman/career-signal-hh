@@ -16,7 +16,12 @@ def command_export(args: argparse.Namespace) -> int:
     # --preset is an alias for --profile
     profile = args.preset or args.profile
     rows = storage.list_vacancies(args.min_score, profile, args.days)
-    export_html(rows, "exports/vacancies_report.html")
+
+    # Fetch cluster info for HTML dedupe filter
+    ids = [r["id"] for r in rows]
+    cluster_map = storage.get_clusters_for_vacancies(ids) if ids else {}
+
+    export_html(rows, "exports/vacancies_report.html", cluster_map)
     export_csv(rows, "exports/vacancies.csv")
     export_jsonl(rows, "exports/vacancies.jsonl")
     console.print(f"[green]Экспортировано вакансий: {len(rows)}[/green]")

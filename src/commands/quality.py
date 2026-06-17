@@ -56,7 +56,27 @@ def command_quality_cluster(_: argparse.Namespace) -> int:
         console.print("[green]No clusters to create.[/green]")
         return 0
 
-    # Save clusters to JSON for reference
+    # Save to SQLite
+    storage.replace_vacancy_clusters(clusters)
+
+    # Compute and save employer aliases
+    norm_emps: dict[str, list[str]] = {}
+    for r in rows:
+        raw = (r.get("employer_name") or "").strip()
+        if raw:
+            norm = normalize_employer_name(raw)
+            norm_emps.setdefault(norm, []).append(raw)
+    aliases = {k: list(set(v)) for k, v in norm_emps.items() if len(set(v)) > 1}
+    if aliases:
+        storage.replace_employer_aliases(aliases)
+
+    dup_vacancies = sum(len(c["vacancy_ids"]) for c in clusters)
+    console.print(
+        f"[green]Saved {len(clusters)} clusters ({dup_vacancies} vacancies) to SQLite[/green]"
+    )
+    console.print(f"[green]Saved {len(aliases)} employer alias groups to SQLite[/green]")
+
+    # Also save clusters to JSON as secondary artifact
     out = Path("data/vacancy_clusters.json")
     cluster_data = []
     for c in clusters:
@@ -69,7 +89,7 @@ def command_quality_cluster(_: argparse.Namespace) -> int:
             }
         )
     out.write_text(json.dumps(cluster_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    console.print(f"[green]Saved {len(cluster_data)} clusters to {out}[/green]")
+    console.print(f"[dim]Also saved {len(cluster_data)} clusters to {out}[/dim]")
     return 0
 
 

@@ -25,9 +25,7 @@ def _normalize_review_date(value: str) -> str:
     try:
         return date.fromisoformat(value).isoformat()
     except ValueError as exc:
-        raise ValueError(
-            f"Некорректная дата {value!r}. Используйте today или YYYY-MM-DD."
-        ) from exc
+        raise ValueError(f"Некорректная дата {value!r}. Используйте today или YYYY-MM-DD.") from exc
 
 
 def command_review_list(args: argparse.Namespace) -> int:
@@ -97,9 +95,7 @@ def command_review_apply(args: argparse.Namespace) -> int:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         return 2
-    console.print(
-        f"[green]{args.vacancy_id}: status=applied, applied_at={applied_at}[/green]"
-    )
+    console.print(f"[green]{args.vacancy_id}: status=applied, applied_at={applied_at}[/green]")
     return 0
 
 
@@ -111,8 +107,7 @@ def command_review_next(args: argparse.Namespace) -> int:
         console.print(f"[red]{exc}[/red]")
         return 2
     console.print(
-        f"[green]{args.vacancy_id}: следующее действие сохранено "
-        f"на {next_action_at}[/green]"
+        f"[green]{args.vacancy_id}: следующее действие сохранено на {next_action_at}[/green]"
     )
     return 0
 
@@ -189,6 +184,48 @@ def _short_salary(sfrom: int | None, sto: int | None, curr: str | None) -> str:
     return txt
 
 
+def _dedupe_queue(storage, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Filter *rows* keeping only the best vacancy per cluster.
+
+    "Best" = highest total_score, then latest published_at.
+    Non-clustered vacancies pass through.
+    """
+    if not rows:
+        return rows
+    ids = [r["id"] for r in rows]
+    cluster_map = storage.get_clusters_for_vacancies(ids)
+
+    # Group by cluster_id
+    clustered: dict[str, list[dict[str, Any]]] = {}
+    unclustered: list[dict[str, Any]] = []
+    for row in rows:
+        cinfo = cluster_map.get(row["id"])
+        if cinfo:
+            clustered.setdefault(cinfo["cluster_id"], []).append(row)
+        else:
+            unclustered.append(row)
+
+    # Pick best per cluster
+    result: list[dict[str, Any]] = []
+    for cid, members in clustered.items():
+        best = max(
+            members,
+            key=lambda r: (
+                r.get("total_score", 0),
+                r.get("published_at", ""),
+            ),
+        )
+        # Annotate so UI knows this is a cluster member
+        best["_cluster_id"] = cid
+        best["_cluster_size"] = len(members)
+        result.append(best)
+
+    # Sort by score desc (preserve original ordering intention)
+    result.extend(unclustered)
+    result.sort(key=lambda r: r.get("total_score", 0), reverse=True)
+    return result
+
+
 def command_review_queue(args: argparse.Namespace) -> int:
     storage = _review_storage()
     decisions = args.decision.split(",") if args.decision else None
@@ -207,6 +244,11 @@ def command_review_queue(args: argparse.Namespace) -> int:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         return 2
+
+    # Dedupe: show only best per cluster
+    if getattr(args, "dedupe", False):
+        rows = _dedupe_queue(storage, rows)
+
     _print_queue_table(rows, "Review Queue")
     console.print(f"\n[dim]{len(rows)} results[/dim]")
     return 0
@@ -296,14 +338,10 @@ def command_review_bulk_interesting(args: argparse.Namespace) -> int:
     min_score = args.min_score if args.min_score is not None else 85
     decision = args.decision or "strong_match"
     rows = storage.list_queue(min_score=min_score, decision=decision, limit=1000)
-    if not _confirm_bulk(
-        args, f"Bulk interesting (score ≥ {min_score}, {decision})", len(rows)
-    ):
+    if not _confirm_bulk(args, f"Bulk interesting (score ≥ {min_score}, {decision})", len(rows)):
         console.print("[yellow]Отменено.[/yellow]")
         return 0
-    return _bulk_action(
-        storage, "interesting", args.force, min_score=min_score, decision=decision
-    )
+    return _bulk_action(storage, "interesting", args.force, min_score=min_score, decision=decision)
 
 
 def command_review_bulk_set(args: argparse.Namespace) -> int:
