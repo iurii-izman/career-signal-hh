@@ -108,7 +108,11 @@ def _build_fit_summary(details: dict | None, vacancy: dict, lang: str) -> dict[s
         if details
         else json_loads(vacancy.get("risk_flags_json"), [])
     )
-    work = json_loads(vacancy.get("work_format_flags_json"), [])
+    work = (
+        json_loads(details.get("work_format_flags_json"), [])
+        if details
+        else json_loads(vacancy.get("work_format_flags_json"), [])
+    )
     salary_from = vacancy.get("salary_from")
     salary_to = vacancy.get("salary_to")
 

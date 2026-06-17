@@ -8,7 +8,6 @@ from pathlib import Path
 
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm
 from rich.table import Table
 
 console = Console()
@@ -212,25 +211,16 @@ def command_maintenance_cleanup(args: argparse.Namespace) -> int:
         )
     console.print(table)
 
-    if args.dry_run:
+    # Default to dry-run behaviour unless --yes is explicitly given.
+    if not args.yes:
         console.print(
             f"\n[yellow][DRY RUN] Would delete {total_delete} files ({_fmt_size(total_size)}).[/yellow]"
         )
         console.print("[dim]Run with --yes to execute.[/dim]")
         return 0
 
-    # Confirm
-    if not args.yes:
-        console.print(
-            f"\n[yellow]About to delete {total_delete} files ({_fmt_size(total_size)}).[/yellow]"
-        )
-        try:
-            if not Confirm.ask("Proceed with deletion?", default=False):
-                console.print("[yellow]Cancelled.[/yellow]")
-                return 0
-        except (EOFError, KeyboardInterrupt):
-            console.print("\n[yellow]Cancelled.[/yellow]")
-            return 0
+    # --yes mode: user already opted in, proceed without interactive prompt
+    console.print(f"\n[yellow]Deleting {total_delete} files ({_fmt_size(total_size)})...[/yellow]")
 
     # Execute deletions
     deleted = 0

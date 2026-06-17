@@ -1,0 +1,28 @@
+{
+  "id": "52345678",
+  "name": "Senior Python Engineer (RAG / LLM)",
+  "area": { "id": "1", "name": "Москва" },
+  "employer": { "id": "600", "name": "DataFlow Inc" },
+  "alternate_url": "https://hh.ru/vacancy/52345678",
+  "published_at": "2026-06-14T10:00:00+0300",
+  "created_at": "2026-06-14T09:00:00+0300",
+  "archived": false,
+  "salary": { "from": 350000, "to": 500000, "currency": "USD" },
+  "schedule": { "id": "remote", "name": "remote" },
+  "employment": { "id": "full", "name": "Полная занятость" },
+  "experience": { "id": "moreThan6", "name": "Более 6 лет" },
+  "description": "<p>Senior Python engineer to build next-gen RAG pipelines with LLM integration.</p><p>Remote, USD salary. Stack: Python, FastAPI, LangGraph, Qdrant, PostgreSQL.</p>",
+  "key_skills": [
+    { "name": "Python" },
+    { "name": "RAG" },
+    { "name": "LLM" },
+    { "name": "FastAPI" },
+    { "name": "LangGraph" },
+    { "name": "Qdrant" },
+    { "name": "PostgreSQL" }
+  ],
+  "snippet": {
+    "requirement": "Senior Python, RAG, LLM, FastAPI, LangGraph, Qdrant.",
+    "responsibility": "Build and scale RAG pipelines for enterprise clients."
+  }
+}

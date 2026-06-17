@@ -200,7 +200,6 @@ def _render_queue(storage, limit: int = 15) -> str:
             cluster_badge = f' <span class="cluster-badge" title="Cluster {cinfo["cluster_id"]}">{csize} dupes</span>'
 
         # Apply-pack link
-        ap_slug = f"exports/apply_packs/{sid}_"
         ap_files = list(Path("exports/apply_packs").glob(f"{sid}_*.html"))
         ap_link = ""
         if ap_files:
@@ -310,7 +309,6 @@ def command_cockpit_export(_: argparse.Namespace) -> int:
     stats = storage.stats()
     total = stats["total"]
     remote = stats["remote"]
-    with_salary = stats["with_salary"]
 
     # Funnel
     funnel = {}
@@ -319,8 +317,7 @@ def command_cockpit_export(_: argparse.Namespace) -> int:
 
     # Data quality
     all_rows = storage.list_vacancies(limit=9999)
-    clusters = find_duplicates(all_rows)
-    dup_count = len(clusters)
+    _dup_clusters = find_duplicates(all_rows)  # keep call for side-effect check
     sample_count = sum(1 for r in all_rows if (r.get("id") or "").startswith("sample-"))
     missing_scores = sum(1 for r in all_rows if not r.get("total_score"))
     db_clusters = storage.count_clusters()

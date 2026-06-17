@@ -1,0 +1,18 @@
+candidate:
+  name_ru: "Алексей Тестов"
+  name_en: "Alexey Testov"
+  location: "Москва, Россия"
+  availability: "2 недели"
+  links:
+    github: "https://github.com/testov"
+    linkedin: "https://linkedin.com/in/testov"
+  profiles:
+    default:
+      summary_ru: "Python-разработчик с опытом AI-автоматизации и CRM-интеграций."
+      summary_en: "Python developer with AI automation and CRM integration experience."
+    ai_automation:
+      summary_ru: "AI Automation Engineer с фокусом на LLM, RAG и бизнес-автоматизацию."
+      summary_en: "AI Automation Engineer focused on LLM, RAG, and business automation."
+    bitrix_1c:
+      summary_ru: "Интегратор Битрикс24 и 1С с опытом автоматизации бизнес-процессов."
+      summary_en: "Bitrix24 and 1C integrator with business process automation experience."

@@ -1,0 +1,74 @@
+templates:
+  default:
+    ru:
+      short: "{candidate_name} — отклик на {vacancy_title}"
+      medium: |
+        # Отклик: {vacancy_title}
+
+        {candidate_name}
+
+        **Fit Analysis:**
+        {fit_reasons}
+
+        **Concerns:**
+        {fit_concerns}
+
+        **Strategy:** {fit_strategy}
+
+        ## Сопроводительное письмо
+        {cover_letter}
+
+        ## 🤔 Вопросы рекрутеру
+        - Как организован процесс онбординга?
+
+        ## 📋 Проверка контракта / remote
+        - Проверить remote формат
+        - Проверить зарплату
+      detailed: |
+        # Детальный отклик: {vacancy_title} — {company}
+
+        {candidate_name}
+
+        {fit_reasons}
+
+        {fit_concerns}
+
+        {fit_strategy}
+
+        {cover_letter}
+    en:
+      short: "{candidate_name} — apply for {vacancy_title}"
+      medium: |
+        # Apply: {vacancy_title}
+
+        {candidate_name}
+
+        **Fit Analysis:**
+        {fit_reasons}
+
+        **Concerns:**
+        {fit_concerns}
+
+        **Strategy:** {fit_strategy}
+
+        ## Cover Letter
+        {cover_letter}
+
+        ## 🤔 Questions for Recruiter
+        - What does onboarding look like?
+
+        ## 📋 Contract / Remote Checks
+        - Verify remote format
+        - Verify salary
+      detailed: |
+        # Detailed: {vacancy_title} — {company}
+
+        {candidate_name}
+
+        {fit_reasons}
+
+        {fit_concerns}
+
+        {fit_strategy}
+
+        {cover_letter}

@@ -785,11 +785,11 @@ def command_calibrate_export(_: argparse.Namespace) -> int:
         if not tmp.closed:
             tmp.close()
         Path(tmp.name).unlink(missing_ok=True)
-    console.print(f"[green]calibration_keywords.csv[/green]")
+    console.print("[green]calibration_keywords.csv[/green]")
 
     # ── HTML ──
     _export_html_report(storage, suggestions, out)
-    console.print(f"[green]calibration_report.html[/green]")
+    console.print("[green]calibration_report.html[/green]")
     return 0
 
 

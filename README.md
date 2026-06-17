@@ -950,3 +950,89 @@ python -m src.main export
 
 HTML поддерживает фильтр по review status и показывает priority, заметки,
 дату ручного отклика и следующее действие. CSV и JSONL содержат те же поля.
+
+## Тестирование
+
+### Быстрые тесты (smoke-check перед commit)
+
+```powershell
+# Только тесты без сети и без тяжёлой DB — < 5 секунд
+python -m pytest tests/ -m no_network -x -q
+
+# Проверка стиля
+python -m ruff check src/ tests/
+
+# Health check проекта
+python -m src.main health
+
+# Сухой прогон maintenance
+python -m src.main maintenance cleanup --dry-run
+```
+
+### Полный test suite
+
+```powershell
+# Все тесты
+python -m pytest tests/ -v
+
+# Только unit-тесты (без DB, без integration)
+python -m pytest tests/ -m "not integration" -v
+
+# Только integration + no_network
+python -m pytest tests/ -m "integration and no_network" -v
+
+# С отчётом о покрытии (если установлен pytest-cov)
+python -m pytest tests/ --cov=src --cov-report=term-missing
+```
+
+### Маркеры тестов
+
+| Маркер       | Назначение                                              |
+|--------------|--------------------------------------------------------|
+| `unit`       | Быстрые тесты без DB и сети                            |
+| `integration`| Тесты с DB и/или несколькими модулями                  |
+| `no_network` | Гарантированно без HTTP-запросов                       |
+| `slow`       | Тесты длительнее нескольких секунд                     |
+
+### Структура тестов
+
+```
+tests/
+├── fixtures/                  # Реалистичные JSON/YAML фикстуры
+│   ├── hh_vacancy_ai_good.json
+│   ├── hh_vacancy_ai_bad_qa.json
+│   ├── hh_vacancy_bitrix_good.json
+│   ├── hh_vacancy_onsite_bad.json
+│   ├── hh_vacancy_no_salary.json
+│   ├── hh_vacancy_duplicate_1.json
+│   ├── hh_vacancy_duplicate_2.json
+│   ├── search_presets_valid.yaml
+│   ├── search_presets_invalid.yaml
+│   ├── candidate.yaml
+│   └── apply_templates.yaml
+├── helpers.py                 # Фабрики: make_storage, seed_vacancies, run_cli
+├── test_cli_contracts.py      # Контракты парсинга CLI
+├── test_e2e_local_workflow.py # End‑to‑end сценарий без сети
+├── test_snapshots.py          # Структурные проверки HTML-экспорта
+├── test_network_safety.py     # Команды не делают API-вызовов
+└── ...                        # Остальные тесты
+```
+
+### Pre-commit checklist
+
+```powershell
+# 1. Все тесты
+python -m pytest
+
+# 2. Стиль
+python -m ruff check src/ tests/
+
+# 3. Health
+python -m src.main health
+
+# 4. DB integrity
+python -m src.main db integrity
+
+# 5. Maintenance preview
+python -m src.main maintenance cleanup --dry-run
+```

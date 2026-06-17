@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from . import db_migrations  # noqa: E402 — circular-safe, used in __init__
-from .models import ScoreResult, Vacancy
+from .models import ScoreDetails, ScoreResult, Vacancy
 from .utils import json_dumps
 
 SCHEMA = """
@@ -312,8 +312,6 @@ class Storage:
 
     def upsert_score_details(self, details: ScoreDetails) -> None:
         """Insert or update score_details for a vacancy."""
-        from .models import ScoreDetails
-
         values = details.model_dump()
         values["category_scores_json"] = json_dumps(values.pop("category_scores"))
         values["matched_keywords_json"] = json_dumps(
@@ -325,6 +323,7 @@ class Storage:
         )
         values.pop("excluded_keywords", None)
         values["risk_flags_json"] = json_dumps(values.pop("risk_flags"))
+        values["work_format_flags_json"] = json_dumps(values.pop("work_format_flags"))
         values["explanation_json"] = json_dumps(values.pop("explanation"))
         columns = list(values)
         updates = ", ".join(

@@ -17,6 +17,7 @@ from .commands import (
     db,
     doctor,
     export,
+    health,
     maintenance,
     presets,
     profiles,
@@ -310,6 +311,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     sub.add_parser("stats").set_defaults(func=stats.command_stats)
     sub.add_parser("auth-check").set_defaults(func=auth.command_auth_check)
     sub.add_parser("doctor").set_defaults(func=doctor.command_doctor)
+    sub.add_parser("health").set_defaults(func=health.command_health)
     sub.add_parser("profiles").set_defaults(func=profiles.command_profiles)
     sp = sub.add_parser("sample-export")
     sp.add_argument("--db", default=None)
@@ -366,7 +368,7 @@ def build_maintenance_parser(sub: argparse._SubParsersAction) -> None:
     ps.add_parser("report").set_defaults(func=maintenance.command_maintenance_report)
     c = ps.add_parser("cleanup")
     c.add_argument(
-        "--dry-run", action="store_true", default=True, help="Preview only, no deletion (default)"
+        "--dry-run", action="store_true", default=False, help="Preview only, no deletion"
     )
     c.add_argument("-y", "--yes", action="store_true", help="Execute deletion")
     c.set_defaults(func=maintenance.command_maintenance_cleanup)

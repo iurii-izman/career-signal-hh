@@ -1,0 +1,25 @@
+{
+  "id": "12345679",
+  "name": "QA Automation Engineer (Python)",
+  "area": { "id": "1", "name": "Москва" },
+  "employer": { "id": "200", "name": "TestSoft LLC" },
+  "alternate_url": "https://hh.ru/vacancy/12345679",
+  "published_at": "2026-06-14T15:00:00+0300",
+  "created_at": "2026-06-14T14:00:00+0300",
+  "archived": false,
+  "salary": { "from": 150000, "to": 200000, "currency": "RUR" },
+  "schedule": { "id": "fullDay", "name": "Полный день" },
+  "employment": { "id": "full", "name": "Полная занятость" },
+  "experience": { "id": "between1And3", "name": "От 1 года до 3 лет" },
+  "description": "<p>QA Automation Engineer needed for testing web applications.</p><p>Write automated tests in Python + Selenium. Manual testing as needed.</p>",
+  "key_skills": [
+    { "name": "Python" },
+    { "name": "Selenium" },
+    { "name": "Pytest" },
+    { "name": "QA" }
+  ],
+  "snippet": {
+    "requirement": "QA automation, Python, Selenium, тестирование.",
+    "responsibility": "Автоматизация тестирования, написание тест-кейсов."
+  }
+}

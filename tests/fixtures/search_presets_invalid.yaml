@@ -1,0 +1,12 @@
+defaults:
+  remote_only: true
+presets:
+  broken_preset:
+    enabled: true
+    description: Missing required search_terms key
+    include:
+      any:
+      - python
+    exclude:
+      any: []
+# Missing search_terms — should cause validation warnings

@@ -16,3 +16,9 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+markers = [
+    "unit: fast tests with no DB or network (deselect with '-m \"not unit\"')",
+    "integration: tests that use DB and/or multiple modules",
+    "no_network: tests guaranteed to make zero HTTP requests",
+    "slow: tests that take longer than a few seconds",
+]

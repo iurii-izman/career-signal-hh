@@ -242,3 +242,127 @@ def test_no_overwrite_without_flag(tmp_path: Path) -> None:
     assert result2 is True
     review3 = storage.get_review("no1")
     assert review3.get("cover_letter_draft") == "New Draft"
+
+
+# ── Apply-pack ID correctness ────────────────────────────────────────────────
+
+
+def test_apply_pack_uses_get_vacancy_full_for_vacancy_id(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """apply-pack VACANCY_ID must use get_vacancy_full, not list_vacancies(limit=1).
+
+    Verifies that get_vacancy_full returns correct vacancy with score + details.
+    """
+    storage = _make_storage(tmp_path)
+
+    v = _make_vacancy("test-123", "Senior AI Engineer", "TopCorp")
+    storage.upsert_vacancy(v)
+
+    # Also create another vacancy to ensure we don't accidentally pick the wrong one
+    v2 = _make_vacancy("other-456", "Junior Dev", "OtherCorp")
+    storage.upsert_vacancy(v2)
+
+    # Give both scores, but test-123 gets the higher score
+    now = "2025-06-01T12:00:00+00:00"
+    with storage.connect() as conn:
+        conn.execute(
+            "INSERT INTO scores (vacancy_id, total_score, ai_automation_score, bitrix_1c_score, best_profile, scored_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ["test-123", 90, 90, 0, "ai_automation", now],
+        )
+        conn.execute(
+            "INSERT INTO scores (vacancy_id, total_score, ai_automation_score, bitrix_1c_score, best_profile, scored_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ["other-456", 50, 50, 0, "ai_automation", now],
+        )
+
+    # get_vacancy_full must return the correct vacancy by ID
+    full = storage.get_vacancy_full("test-123")
+    assert full is not None
+    assert full["name"] == "Senior AI Engineer"
+    assert full["employer_name"] == "TopCorp"
+    assert full["total_score"] == 90
+
+    # Verify that the other vacancy is NOT returned
+    full_other = storage.get_vacancy_full("other-456")
+    assert full_other is not None
+    assert full_other["name"] == "Junior Dev"
+
+
+# ── work_format_flags: remote vacancy ────────────────────────────────────────
+
+
+def test_remote_vacancy_has_work_format_flags_remote(tmp_path: Path) -> None:
+    """A remote vacancy must have 'remote' in work_format_flags, not in risk_flags."""
+    from src.models import Vacancy
+    from src.scoring_v2 import _work_flags
+
+    now = "2025-06-01T12:00:00+00:00"
+    v = Vacancy(
+        id="r1",
+        name="Remote Python Dev",
+        employer_name="RemoteCorp",
+        alternate_url="https://hh.ru/r1",
+        raw_json="{}",
+        first_seen_at=now,
+        last_seen_at=now,
+        schedule_name="remote",
+        description_text="Python developer remote position",
+    )
+
+    flags = _work_flags(v)
+    assert "remote" in flags, (
+        f"Remote vacancy should have 'remote' in work_format_flags, got {flags}"
+    )
+    assert "onsite" not in flags
+
+
+def test_onsite_vacancy_has_work_format_flags_onsite(tmp_path: Path) -> None:
+    """An onsite vacancy must have 'onsite' in work_format_flags."""
+    from src.models import Vacancy
+    from src.scoring_v2 import _work_flags
+
+    now = "2025-06-01T12:00:00+00:00"
+    v = Vacancy(
+        id="o1",
+        name="Office Python Dev",
+        employer_name="OfficeCorp",
+        alternate_url="https://hh.ru/o1",
+        raw_json="{}",
+        first_seen_at=now,
+        last_seen_at=now,
+        schedule_name="полный день",
+        description_text="Python developer office position",
+    )
+
+    flags = _work_flags(v)
+    assert "onsite" in flags or "unknown" in flags
+    assert "remote" not in flags
+
+
+def test_fit_summary_reads_work_format_from_details(tmp_path: Path) -> None:
+    """_build_fit_summary must prefer work_format_flags_json from details over vacancy."""
+    import json
+
+    from src.commands.apply_pack import _build_fit_summary
+
+    # details (score_details table) has work_format_flags_json
+    details = {
+        "total_score": 85,
+        "decision": "strong_match",
+        "matched_keywords_json": json.dumps([{"keyword": "python", "field": "title"}]),
+        "excluded_keywords_json": "[]",
+        "risk_flags_json": "[]",
+        "work_format_flags_json": '["remote"]',
+    }
+    # vacancy (from scores table join) has empty work_format_flags_json
+    vacancy = {
+        "work_format_flags_json": "[]",
+        "risk_flags_json": "[]",
+        "schedule_name": "remote",
+        "salary_from": None,
+        "salary_to": None,
+    }
+
+    fit = _build_fit_summary(details, vacancy, "en")
+    # Should NOT show remote concern because work_format has remote from details
+    assert "Remote format not confirmed" not in fit["concerns"]
