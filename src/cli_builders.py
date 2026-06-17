@@ -29,6 +29,7 @@ from .commands import (
     search,
     stats,
     version_cmd,
+    wizard,
 )
 from .storage import REVIEW_STATUSES
 
@@ -305,6 +306,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_cockpit_parser(sub)
     build_scheduler_parser(sub)
     build_maintenance_parser(sub)
+    build_wizard_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -372,3 +374,39 @@ def build_maintenance_parser(sub: argparse._SubParsersAction) -> None:
     )
     c.add_argument("-y", "--yes", action="store_true", help="Execute deletion")
     c.set_defaults(func=maintenance.command_maintenance_cleanup)
+
+
+def build_wizard_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("wizard")
+    ps = p.add_subparsers(dest="wizard_command", required=False)
+
+    # wizard (no subcommand — menu)
+    m = ps.add_parser("menu")
+    m.add_argument("--plan", action="store_true")
+    m.set_defaults(func=wizard.command_wizard)
+
+    # wizard first-run
+    fr = ps.add_parser("first-run")
+    fr.add_argument("--plan", action="store_true")
+    fr.set_defaults(func=wizard.command_wizard_first_run)
+
+    # wizard daily
+    d = ps.add_parser("daily")
+    d.add_argument("--plan", action="store_true")
+    d.add_argument("--mode", choices=["smoke", "normal"], default="normal")
+    d.add_argument("-y", "--yes", action="store_true")
+    d.set_defaults(func=wizard.command_wizard_daily)
+
+    # wizard improve
+    imp = ps.add_parser("improve")
+    imp.add_argument("--plan", action="store_true")
+    imp.add_argument("-y", "--yes", action="store_true")
+    imp.set_defaults(func=wizard.command_wizard_improve)
+
+    # wizard apply
+    ap = ps.add_parser("apply")
+    ap.add_argument("--plan", action="store_true")
+    ap.set_defaults(func=wizard.command_wizard_apply)
+
+    # Set default handler for bare 'wizard' (no subcommand)
+    p.set_defaults(func=wizard.command_wizard, wizard_command="menu")

@@ -74,6 +74,45 @@ HH_DETAIL_REFRESH_DAYS=7
 При `application_token` с пустым `HH_APP_ACCESS_TOKEN` приложение не падает
 при импорте, но API-команды завершаются понятной конфигурационной ошибкой.
 
+## Guided Workflow (Wizard)
+
+Вместо запоминания команд запустите мастер:
+
+```powershell
+python -m src.main wizard
+```
+
+Мастер показывает интерактивное меню с 7 опциями и проводит по шагам.
+
+### Подкоманды
+
+| Команда                              | Описание                                              |
+|--------------------------------------|-------------------------------------------------------|
+| `wizard`                             | Интерактивное меню (выбор 1–7)                       |
+| `wizard first-run`                   | Проверка .env, токена, миграций, пресетов            |
+| `wizard daily`                       | Health → backup → search → cockpit → review          |
+| `wizard improve`                     | Quality → calibrate → suggest → validate             |
+| `wizard apply`                       | Queue → explain → apply-pack → review set            |
+
+### Plan mode (неинтерактивный)
+
+Все подкоманды поддерживают `--plan` — печатают план без выполнения:
+
+```powershell
+python -m src.main wizard daily --plan
+python -m src.main wizard first-run --plan
+python -m src.main wizard improve --plan
+python -m src.main wizard apply --plan
+```
+
+### Wizard гарантии
+
+- **Никогда не запускает deep mode** (только smoke/normal).
+- **Не отправляет отклики** — wizard только генерирует apply-pack локально.
+- **Не печатает токены** — только показывает «set» / «not set».
+- **Опасные действия требуют подтверждения** (backup, search — Confirm.ask).
+- **`--yes` пропускает подтверждения** для автоматизации.
+
 ## Безопасные режимы поиска (Safe Search Modes)
 
 CareerSignal HH поддерживает три режима поиска для защиты API HH от избыточной
