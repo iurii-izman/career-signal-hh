@@ -13,6 +13,7 @@ from .commands import (
     auth,
     autopilot,
     calibrate,
+    campaigns,
     cockpit,
     db,
     doctor,
@@ -309,6 +310,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_maintenance_parser(sub)
     build_wizard_parser(sub)
     build_search_lab_parser(sub)
+    build_campaigns_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -436,3 +438,29 @@ def build_search_lab_parser(sub: argparse._SubParsersAction) -> None:
     d.set_defaults(func=search_lab.command_search_lab_dry_plan)
 
     ps.add_parser("export").set_defaults(func=search_lab.command_search_lab_export)
+
+
+def build_campaigns_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("campaigns")
+    ps = p.add_subparsers(dest="campaigns_command", required=True)
+
+    ps.add_parser("list").set_defaults(func=campaigns.command_campaigns_list)
+
+    s = ps.add_parser("show")
+    s.add_argument("name")
+    s.set_defaults(func=campaigns.command_campaigns_show)
+
+    d = ps.add_parser("daily")
+    d.add_argument("name")
+    d.add_argument("--skip-auth-check", action="store_true")
+    d.add_argument("--skip-search", action="store_true")
+    d.set_defaults(func=campaigns.command_campaigns_daily)
+
+    q = ps.add_parser("queue")
+    q.add_argument("name")
+    q.set_defaults(func=campaigns.command_campaigns_queue)
+
+    ap = ps.add_parser("apply-pack")
+    ap.add_argument("name")
+    ap.add_argument("--top", type=int, default=5)
+    ap.set_defaults(func=campaigns.command_campaigns_apply_pack)

@@ -1,0 +1,19 @@
+campaigns:
+  iurii_ai:
+    enabled: true
+    description: "Iurii — AI / Automation / RAG roles"
+    candidate_profile: ai
+    presets:
+      - ai_rag_remote
+    default_lang: ru
+    min_score: 70
+    apply_template: ai_rag_remote
+
+  iurii_bitrix:
+    enabled: true
+    description: "Iurii — Bitrix24 / CRM / 1C roles"
+    candidate_profile: bitrix
+    presets:
+      - bitrix24_crm_remote
+    default_lang: ru
+    min_score: 65

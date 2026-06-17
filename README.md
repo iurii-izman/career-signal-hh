@@ -177,6 +177,39 @@ python -m src.main search-lab export
 - **Скрыть low confidence** — скрывает вакансии с confidence < 40%
 - **Скрыть high noise** — скрывает вакансии с noise > 50%
 
+## Campaigns (Multi-Candidate)
+
+Поддержка нескольких кампаний поиска в одной БД:
+
+```powershell
+python -m src.main campaigns list
+python -m src.main campaigns show iurii_ai
+python -m src.main campaigns daily iurii_ai --skip-search  # dry-run
+python -m src.main campaigns queue iurii_bitrix
+python -m src.main campaigns apply-pack iurii_ai --top 5
+```
+
+### config/campaigns.yaml
+
+```yaml
+campaigns:
+  iurii_ai:
+    enabled: true
+    candidate_profile: ai       # references candidate.yaml profiles.ai
+    presets:
+      - ai_rag_remote
+    default_lang: ru
+    min_score: 70
+    apply_template: ai_rag_remote
+```
+
+### Как работает
+
+- `campaigns daily` — запускает autopilot для каждого пресета кампании
+- `campaigns queue` — показывает очередь с min_score кампании
+- `campaigns apply-pack` — использует candidate_profile кампании
+- Без `campaigns.yaml` все существующие команды работают как раньше
+
 ## Безопасные режимы поиска (Safe Search Modes)
 
 CareerSignal HH поддерживает три режима поиска для защиты API HH от избыточной
