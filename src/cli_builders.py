@@ -24,6 +24,7 @@ from .commands import (
     presets,
     profiles,
     quality,
+    report,
     review,
     sample,
     scheduler,
@@ -313,6 +314,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_search_lab_parser(sub)
     build_campaigns_parser(sub)
     build_import_parser(sub)
+    build_report_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -497,3 +499,17 @@ def build_import_parser(sub: argparse._SubParsersAction) -> None:
     t = ps.add_parser("text-file")
     t.add_argument("path")
     t.set_defaults(func=import_vacancy.command_import_text_file)
+
+
+def build_report_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("report")
+    ps = p.add_subparsers(dest="report_command", required=True)
+
+    w = ps.add_parser("weekly")
+    w.add_argument("--days", type=int, default=7)
+    w.add_argument("--preset")
+    w.add_argument("--campaign")
+    w.add_argument("--format", choices=["html", "md", "json", "all"], default="all")
+    w.set_defaults(func=report.command_report_weekly)
+
+    ps.add_parser("export").set_defaults(func=report.command_report_export)
