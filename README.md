@@ -656,11 +656,64 @@ python -m src.main db purge-samples
 
 # Миграции и целостность
 python -m src.main db migrate        # применить ожидающие миграции
-python -m src.main db integrity      # проверка целостности
+python -m src.main db integrity      # расширенная проверка целостности
 python -m src.main db vacuum         # сжатие БД (с предварительным бэкапом)
 python -m src.main db optimize       # оптимизация индексов
 python -m src.main db cleanup-orphans  # удалить осиротевшие записи
 ```
+
+### Миграции базы данных
+
+Миграции управляются файлом `src/db_migrations.py`.
+Каждая миграция имеет уникальный `version` и имя.
+Миграции идемпотентны: повторный запуск `db migrate` безопасен и
+пропустит уже применённые.
+
+```powershell
+python -m src.main db migrate
+```
+
+Команда выводит таблицу со статусом каждой миграции (`applied`,
+`skipped`, `failed`) и код возврата:
+
+- `0` — все миграции применены или пропущены (нет ошибок);
+- `1` — есть failed-миграции.
+
+Если миграция завершилась с `failed`:
+
+1. Не удаляйте `data/vacancies.sqlite`.
+2. Прочитайте сообщение об ошибке в столбце `Error` таблицы.
+3. Устраните причину (например, конфликт схемы).
+4. Запустите `db migrate` снова.
+
+Неудачная миграция **не записывается** в `schema_migrations` —
+система не считает её применённой, и при следующем запуске попробует
+снова.
+
+**Рекомендация**: перед `db migrate` делайте бэкап:
+
+```powershell
+python -m src.main db backup
+python -m src.main db migrate
+python -m src.main db integrity
+```
+
+### Расширенная проверка целостности
+
+```powershell
+python -m src.main db integrity
+```
+
+Проверяет:
+
+- `PRAGMA integrity_check` — структурная целостность SQLite;
+- Наличие таблицы `schema_migrations`;
+- Текущую и ожидаемую версию схемы;
+- Наличие колонки `work_format_flags_json` в `score_details`;
+- Наличие обязательных индексов;
+- Оценку необходимости `VACUUM` (свободные страницы);
+- Количество orphan-записей, sample-вакансий, дубликатов URL,
+  пропущенных scores/score_details/descriptions.
 
 Рекомендуемый maintenance:
 

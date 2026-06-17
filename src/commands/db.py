@@ -3,7 +3,8 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-from datetime import datetime, timezone
+import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -119,38 +120,113 @@ def command_db_backup(_: argparse.Namespace) -> int:
 
 def command_db_migrate(_: argparse.Namespace) -> int:
     db_path = _get_db_path()
-    storage = Storage(db_path)
-    with storage.connect() as conn:
-        from ..db_migrations import apply_migrations, get_current_schema_version
+    # Use a raw connection — Storage.__init__ also calls apply_migrations
+    # internally, which would make this command a no-op.
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from ..db_migrations import apply_migrations, get_expected_schema_version
 
-        before = get_current_schema_version(conn)
         result = apply_migrations(conn)
-        after = get_current_schema_version(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Render results table
+    table = Table(title="DB Migrations")
+    table.add_column("Version", justify="right")
+    table.add_column("Name")
+    table.add_column("Status")
+    table.add_column("Error")
+
+    status_style = {
+        "applied": "[green]applied[/green]",
+        "skipped": "[dim]skipped[/dim]",
+        "failed": "[red]failed[/red]",
+    }
+
+    for d in result["details"]:
+        table.add_row(
+            str(d["version"]),
+            d["name"],
+            status_style.get(d["status"], d["status"]),
+            d["error"] or "",
+        )
+
+    console.print(table)
     console.print(
-        f"Migrations: [green]{result['applied']} applied[/green], [dim]{result['skipped']} skipped[/dim]"
+        f"applied={result['applied']}  skipped={result['skipped']}  failed={result['failed']}  "
+        f"target version={get_expected_schema_version()}"
     )
-    console.print(f"Schema version: {before} → {after}")
-    return 0
+
+    return 0 if result["failed"] == 0 else 1
 
 
 def command_db_integrity(_: argparse.Namespace) -> int:
     db_path = _get_db_path()
     storage = Storage(db_path)
     with storage.connect() as conn:
-        # PRAGMA integrity_check
-        result = conn.execute("PRAGMA integrity_check").fetchone()
-        integrity_ok = result[0] == "ok" if result else False
+        from ..db_migrations import check_integrity_extended, count_orphans
 
-        from ..db_migrations import count_orphans
-
+        ext = check_integrity_extended(conn)
         stats = count_orphans(conn)
 
+    # Build table
     table = Table(title="Database Integrity")
     table.add_column("Check")
     table.add_column("Status")
+
+    # PRAGMA integrity_check
     table.add_row(
-        "PRAGMA integrity_check", "[green]OK[/green]" if integrity_ok else "[red]FAIL[/red]"
+        "PRAGMA integrity_check",
+        "[green]OK[/green]" if ext["pragma_integrity_ok"] else "[red]FAIL[/red]",
     )
+
+    # schema_migrations table
+    table.add_row(
+        "schema_migrations table",
+        "[green]exists[/green]" if ext["schema_migrations_exists"] else "[red]missing[/red]",
+    )
+
+    # Schema version
+    ver_current = ext["current_schema_version"]
+    ver_expected = ext["expected_schema_version"]
+    ver_ok = ver_current >= ver_expected
+    table.add_row(
+        f"Schema version (current={ver_current}, expected={ver_expected})",
+        "[green]OK[/green]" if ver_ok else "[yellow]behind[/yellow]",
+    )
+
+    # score_details work_format_flags_json
+    table.add_row(
+        "score_details.work_format_flags_json",
+        "[green]exists[/green]" if ext["score_details_has_wf_flags"] else "[red]missing[/red]",
+    )
+
+    # Required indexes
+    if ext["missing_indexes"]:
+        table.add_row(
+            "Required indexes",
+            f"[red]missing: {', '.join(ext['missing_indexes'])}[/red]",
+        )
+    else:
+        table.add_row("Required indexes", "[green]all present[/green]")
+
+    # VACUUM estimate
+    freelist_mb = ext["freelist_bytes"] / (1024 * 1024) if ext["freelist_bytes"] else 0
+    if ext["vacuum_recommended"]:
+        table.add_row(
+            "VACUUM recommended",
+            f"[yellow]yes ({ext['freelist_pages']} pages, ~{freelist_mb:.1f} MB)[/yellow]",
+        )
+    else:
+        table.add_row(
+            "VACUUM recommended",
+            f"[green]no ({ext['freelist_pages']} pages)[/green]",
+        )
+
+    # Orphan stats
     for label, key in [
         ("Orphan scores", "orphan_scores"),
         ("Orphan score_details", "orphan_score_details"),
@@ -164,8 +240,21 @@ def command_db_integrity(_: argparse.Namespace) -> int:
         val = stats[key]
         status = "[green]0[/green]" if val == 0 else f"[yellow]{val}[/yellow]"
         table.add_row(label, status)
+
     console.print(table)
-    return 0 if integrity_ok else 1
+
+    # Determine exit code
+    issues = 0
+    if not ext["pragma_integrity_ok"]:
+        issues += 1
+    if not ext["schema_migrations_exists"]:
+        issues += 1
+    if not ext["score_details_has_wf_flags"]:
+        issues += 1
+    if ext["missing_indexes"]:
+        issues += 1
+
+    return 0 if issues == 0 else 1
 
 
 def command_db_vacuum(_: argparse.Namespace) -> int:

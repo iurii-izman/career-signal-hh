@@ -1,10 +1,67 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
-MIGRATIONS: list[tuple[int, str, str]] = [
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def table_has_column(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    """Return True if *table* already has *column*."""
+    cols = [r[1] for r in connection.execute(f"PRAGMA table_info({table})").fetchall()]
+    return column in cols
+
+
+def safe_add_column(
+    connection: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    """Add column only when it does not exist yet (fully idempotent)."""
+    if not table_has_column(connection, table, column):
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def safe_create_index(connection: sqlite3.Connection, index_sql: str) -> None:
+    """
+    Execute a CREATE INDEX IF NOT EXISTS statement safely.
+
+    *index_sql* must already include IF NOT EXISTS — this helper adds no
+    extra logic, it simply documents intent.
+    """
+    connection.execute(index_sql)
+
+
+# ── Idempotent error classification ─────────────────────────────────────────
+
+# These patterns signal that the migration was already applied (or an
+# equivalent DDL already exists).  We treat them as a no-op success.
+_IDEMPOTENT_PATTERNS = re.compile(r"duplicate column name|already exists", re.IGNORECASE)
+
+
+def _is_idempotent_error(error: sqlite3.Error) -> bool:
+    return bool(_IDEMPOTENT_PATTERNS.search(str(error)))
+
+
+# ── Migration definitions ──────────────────────────────────────────────────
+
+# Every entry is (version, name, sql_or_callable).
+# *version* must be globally unique and monotonically increasing.
+
+MigrationFn = Callable[[sqlite3.Connection], None]
+MigrationEntry = tuple[int, str, str | MigrationFn]
+
+
+def _migration_004_add_work_format_flags(connection: sqlite3.Connection) -> None:
+    safe_add_column(
+        connection,
+        "score_details",
+        "work_format_flags_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )
+
+
+MIGRATIONS: list[MigrationEntry] = [
     (
         1,
         "001_initial_schema",
@@ -77,9 +134,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (
         4,
         "004_score_details_work_format_flags",
-        """
-        ALTER TABLE score_details ADD COLUMN work_format_flags_json TEXT NOT NULL DEFAULT '[]';
-        """,
+        _migration_004_add_work_format_flags,
     ),
     (
         5,
@@ -93,6 +148,8 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         """,
     ),
 ]
+
+# ── Schema migrations table ────────────────────────────────────────────────
 
 
 def _ensure_schema_migrations_table(connection: sqlite3.Connection) -> None:
@@ -112,36 +169,127 @@ def get_current_schema_version(connection: sqlite3.Connection) -> int:
     return row[0] if row and row[0] is not None else 0
 
 
-def apply_migrations(connection: sqlite3.Connection) -> dict[str, int]:
-    """Apply all pending migrations. Returns {applied: N, skipped: N}."""
+def get_expected_schema_version() -> int:
+    """Latest version declared in MIGRATIONS."""
+    return MIGRATIONS[-1][0] if MIGRATIONS else 0
+
+
+# ── Apply / rollback helpers ────────────────────────────────────────────────
+
+
+def _apply_one_migration(
+    connection: sqlite3.Connection, version: int, name: str, sql: str | MigrationFn
+) -> None:
+    """Execute a single migration.  Raises on unexpected errors."""
+    if callable(sql):
+        sql(connection)
+    else:
+        # Wrap multi-statement scripts in an explicit transaction.
+        # executescript() issues an implicit COMMIT before running the
+        # script, so we embed BEGIN/COMMIT inside the script itself.
+        wrapped = f"BEGIN IMMEDIATE;\n{sql}\nCOMMIT;"
+        try:
+            connection.executescript(wrapped)
+        except Exception:
+            connection.rollback()
+            raise
+
+
+# ── Public API ──────────────────────────────────────────────────────────────
+
+
+def apply_migrations(connection: sqlite3.Connection) -> dict[str, Any]:
+    """
+    Apply all pending migrations.
+
+    Returns
+    -------
+    dict with keys:
+        applied : int   — migrations successfully applied *now*
+        skipped : int   — migrations already applied (version <= current)
+        failed  : int   — migrations that failed with an unexpected error
+        details : list  — per-migration status entries
+            Each entry: {"version": int, "name": str, "status": str, "error": str|None}
+            status is one of: "applied", "skipped", "failed"
+    """
     _ensure_schema_migrations_table(connection)
     current = get_current_schema_version(connection)
+
     applied = 0
     skipped = 0
+    failed = 0
+    details: list[dict[str, Any]] = []
     now = datetime.now(timezone.utc).isoformat()
 
     for version, name, sql in MIGRATIONS:
         if version <= current:
             skipped += 1
+            details.append({"version": version, "name": name, "status": "skipped", "error": None})
             continue
+
         try:
-            connection.executescript(sql)
+            _apply_one_migration(connection, version, name, sql)
+
             connection.execute(
                 "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
                 (version, name, now),
             )
             connection.commit()
             applied += 1
-        except sqlite3.Error:
-            # Migration may partially fail if column exists etc - that's OK, it's idempotent
-            connection.execute(
-                "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                (version, name, now),
+            details.append({"version": version, "name": name, "status": "applied", "error": None})
+        except sqlite3.Error as exc:
+            if _is_idempotent_error(exc):
+                # Known idempotent case: column already there,
+                # index/table already exists.  Treat as success.
+                connection.execute(
+                    "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                    (version, name, now),
+                )
+                connection.commit()
+                applied += 1
+                details.append(
+                    {
+                        "version": version,
+                        "name": name,
+                        "status": "applied",
+                        "error": str(exc),
+                    }
+                )
+            else:
+                # Unexpected SQLite error — do NOT record migration.
+                try:
+                    connection.rollback()
+                except sqlite3.Error:
+                    pass
+                failed += 1
+                details.append(
+                    {
+                        "version": version,
+                        "name": name,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                )
+        except Exception as exc:
+            # Any other unexpected error — do NOT record migration.
+            try:
+                connection.rollback()
+            except sqlite3.Error:
+                pass
+            failed += 1
+            details.append(
+                {
+                    "version": version,
+                    "name": name,
+                    "status": "failed",
+                    "error": str(exc),
+                }
             )
-            connection.commit()
-            applied += 1
 
-    return {"applied": applied, "skipped": skipped}
+    return {"applied": applied, "skipped": skipped, "failed": failed, "details": details}
+
+
+# ── Orphan detection & cleanup ──────────────────────────────────────────────
 
 
 def count_orphans(connection: sqlite3.Connection) -> dict[str, int]:
@@ -184,3 +332,72 @@ def cleanup_orphans(connection: sqlite3.Connection) -> dict[str, int]:
         results[f"deleted_{table}"] = c.rowcount
     connection.commit()
     return results
+
+
+# ── Extended integrity checks ───────────────────────────────────────────────
+
+
+def check_integrity_extended(connection: sqlite3.Connection) -> dict[str, Any]:
+    """
+    Run extended integrity checks beyond PRAGMA integrity_check.
+
+    Returns a dict with:
+        schema_migrations_exists    : bool
+        current_schema_version      : int
+        expected_schema_version     : int
+        score_details_has_wf_flags  : bool
+        missing_indexes             : list[str]
+        freelist_pages              : int
+        freelist_bytes              : int
+        vacuum_recommended          : bool
+        pragma_integrity_ok         : bool
+    """
+    result: dict[str, Any] = {}
+
+    # PRAGMA integrity_check
+    row = connection.execute("PRAGMA integrity_check").fetchone()
+    result["pragma_integrity_ok"] = row[0] == "ok" if row else False
+
+    # schema_migrations table exists
+    try:
+        connection.execute("SELECT 1 FROM schema_migrations LIMIT 1")
+        result["schema_migrations_exists"] = True
+    except sqlite3.OperationalError:
+        result["schema_migrations_exists"] = False
+
+    # Schema version
+    result["current_schema_version"] = get_current_schema_version(connection)
+    result["expected_schema_version"] = get_expected_schema_version()
+
+    # score_details has work_format_flags_json
+    result["score_details_has_wf_flags"] = table_has_column(
+        connection, "score_details", "work_format_flags_json"
+    )
+
+    # Required indexes
+    required_indexes = [
+        "idx_vacancies_published",
+        "idx_scores_total",
+        "idx_reviews_status",
+        "idx_score_details_preset",
+        "idx_score_details_decision",
+    ]
+    try:
+        existing = [
+            r[0]
+            for r in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' ORDER BY name"
+            ).fetchall()
+        ]
+    except sqlite3.OperationalError:
+        existing = []
+    result["missing_indexes"] = [idx for idx in required_indexes if idx not in existing]
+
+    # VACUUM estimate
+    freelist = connection.execute("PRAGMA freelist_count").fetchone()[0]
+    page_size = connection.execute("PRAGMA page_size").fetchone()[0]
+    result["freelist_pages"] = freelist or 0
+    result["freelist_bytes"] = (freelist or 0) * (page_size or 0)
+    result["vacuum_recommended"] = (freelist or 0) > 100
+
+    return result
