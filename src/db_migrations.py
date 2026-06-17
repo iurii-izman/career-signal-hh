@@ -61,6 +61,27 @@ def _migration_004_add_work_format_flags(connection: sqlite3.Connection) -> None
     )
 
 
+def _migration_007_add_confidence_noise(connection: sqlite3.Connection) -> None:
+    safe_add_column(
+        connection,
+        "score_details",
+        "confidence_score",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    safe_add_column(
+        connection,
+        "score_details",
+        "noise_score",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    safe_add_column(
+        connection,
+        "score_details",
+        "quality_flags_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )
+
+
 MIGRATIONS: list[MigrationEntry] = [
     (
         1,
@@ -170,6 +191,11 @@ MIGRATIONS: list[MigrationEntry] = [
         CREATE INDEX IF NOT EXISTS idx_vacancy_clusters_vacancy ON vacancy_clusters(vacancy_id);
         CREATE INDEX IF NOT EXISTS idx_vacancy_clusters_cluster ON vacancy_clusters(cluster_id);
         """,
+    ),
+    (
+        7,
+        "007_confidence_noise_quality_flags",
+        _migration_007_add_confidence_noise,
     ),
 ]
 

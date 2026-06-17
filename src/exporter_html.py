@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -90,6 +89,8 @@ def export_html(
 
         cards.append(f"""
 <article class="vacancy" data-score="{row.get("total_score") or 0}"
+ data-confidence="{row.get("confidence_score") or 0}"
+ data-noise="{row.get("noise_score") or 0}"
  data-profile="{_e(row.get("best_profile"))}" data-remote="{str("remote" in work).lower()}"
  data-review="{_e(review_status)}" data-decision="{_e(decision)}"
  data-salary="{str(row.get("salary_from") is not None or row.get("salary_to") is not None).lower()}"
@@ -98,6 +99,7 @@ def export_html(
  <div class="body">
   <div class="heading"><span class="badge">{_e(row.get("best_profile"))}</span>
    {f'<span class="badge decision">{_e(decision)}</span>' if decision else ""}
+   {_confidence_badge(row.get("confidence_score") or 0)}
    <span class="review-status status-{_e(review_status)}">{_e(review_status)}</span>
    <a href="{_e(row.get("alternate_url"))}" target="_blank" rel="noopener">{_e(row.get("name"))}</a></div>
   <div class="meta">{_e(row.get("employer_name"))} · {_e(row.get("area_name"))} · {_e(salary)}</div>
@@ -105,7 +107,7 @@ def export_html(
   <div class="review-meta">Review: {_e(review_status)}{priority} {applied} {next_action}</div>
   {notes}
   <p>{_e(truncate(row.get("description_text"), 300))}</p>
-  <div class="tags">{"".join(f"<span>{_e(x)}</span>" for x in reasons)}{"".join(f"<span>{_e(kw.get("keyword", ""))} {kw.get("field", "")}</span>" for kw in matched[:5])}</div>
+  <div class="tags">{"".join(f"<span>{_e(x)}</span>" for x in reasons)}{"".join(f"<span>{_e(kw.get('keyword', ''))} {kw.get('field', '')}</span>" for kw in matched[:5])}</div>
   <div class="risks">{"".join(f"<span>{_e(x)}</span>" for x in risks)}</div>
   <small>ID: {_e(row.get("id"))} | copy: python -m src.main review set {_e(row.get("id"))} --status interesting</small>
  </div>
@@ -139,10 +141,12 @@ p{{color:#cbd5e1;line-height:1.5}} @media(max-width:800px){{.summary{{grid-templ
 <select id="review"><option value="">Все review status</option><option>new</option><option>interesting</option><option>maybe</option><option>rejected</option><option>applied</option><option>interview</option><option>offer</option><option>archived</option></select>
 <label><input id="remote" type="checkbox"> Только remote</label><label><input id="salary" type="checkbox"> С зарплатой</label>
 <label><input id="low" type="checkbox"> Скрыть low match</label>
+<label><input id="hide_low_conf" type="checkbox"> Скрыть low confidence</label>
+<label><input id="hide_high_noise" type="checkbox"> Скрыть high noise</label>
 <label><input id="hide_rejected" type="checkbox"> Скрыть rejected/archived</label>
 <label><input id="hide_dupes" type="checkbox"> Hide duplicates</label></section>
 <section id="list">{"".join(cards)}</section></main><script>
-const controls=[q,min,profile,decision,review,remote,salary,low,hide_rejected,hide_dupes];function filter(){{
+const controls=[q,min,profile,decision,review,remote,salary,low,hide_low_conf,hide_high_noise,hide_rejected,hide_dupes];function filter(){{
  const text=q.value.toLowerCase(), threshold=Number(min.value||0);
  const seenClusters = new Set();
  document.querySelectorAll('.vacancy').forEach(v=>{{
@@ -152,6 +156,8 @@ const controls=[q,min,profile,decision,review,remote,salary,low,hide_rejected,hi
    (!decision.value||v.dataset.decision===decision.value)&&
    (!remote.checked||v.dataset.remote==='true')&&
    (!salary.checked||v.dataset.salary==='true')&&(!low.checked||v.dataset.profile!=='low_match')&&
+   (!hide_low_conf.checked||Number(v.dataset.confidence)>=40)&&
+   (!hide_high_noise.checked||Number(v.dataset.noise)<=50)&&
    (!hide_rejected.checked||(v.dataset.review!=='rejected'&&v.dataset.review!=='archived'))&&
    (!hide_dupes.checked||!cluster||!seenClusters.has(cluster));
   if (show && cluster && hide_dupes.checked) seenClusters.add(cluster);
@@ -173,3 +179,17 @@ def _day_ago_iso() -> str:
     from datetime import datetime, timedelta, timezone
 
     return (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+
+def _confidence_badge(score: int) -> str:
+    """Return HTML badge for confidence level."""
+    if score >= 70:
+        color = "#4ade80"
+        label = "HIGH"
+    elif score >= 40:
+        color = "#facc15"
+        label = "MED"
+    else:
+        color = "#f87171"
+        label = "LOW"
+    return f'<span class="badge conf" style="background:{color}20;color:{color};border:1px solid {color}">{label} conf</span>'

@@ -1,8 +1,11 @@
+"""Scoring engine v2 — field-aware, confidence-calibrated with safe matching."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
 
+from .matching import safe_keyword_match
 from .models import KeywordHit, ScoreDetails, ScoreResult, Vacancy
 from .utils import normalize_text, parse_datetime
 
@@ -30,7 +33,7 @@ def score_by_preset(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreResult:
 
 
 def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDetails:
-    """Full explainable scoring with field weights and keyword tracking."""
+    """Full explainable scoring with field weights, safe matching, confidence & noise."""
     preset_name = preset.get("_name", "unknown")
     thresholds = preset.get("decision_thresholds", DECISION_THRESHOLDS)
     if isinstance(thresholds, dict):
@@ -54,14 +57,15 @@ def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDeta
     matched: list[KeywordHit] = []
     excluded: list[KeywordHit] = []
     risk_flags: list[str] = []
+    quality_flags: list[str] = []
     category_scores: dict[str, int] = {}
 
     # --- Include scoring ---
-    include_score = _score_include(preset, fields, matched)
+    include_score = _score_include(preset, fields, matched, quality_flags)
     category_scores["include"] = include_score
 
     # --- Boost scoring ---
-    boost_score = _score_boost(preset, fields, matched)
+    boost_score = _score_boost(preset, fields, matched, quality_flags)
     category_scores["boost"] = boost_score
 
     # --- Exclude penalties ---
@@ -104,8 +108,17 @@ def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDeta
         ),
     )
 
-    # --- Decision ---
-    decision = _compute_decision(total, thresholds)
+    # --- Quality flags ---
+    _set_quality_flags(vacancy, fields, matched, excluded, risk_flags, quality_flags)
+
+    # --- Confidence score ---
+    confidence = _compute_confidence(fields, matched, quality_flags, total)
+
+    # --- Noise score ---
+    noise = _compute_noise(excluded, risk_flags, quality_flags)
+
+    # --- Decision (adjusted by confidence/noise) ---
+    decision = _compute_decision(total, confidence, noise, thresholds)
 
     # --- Work format ---
     work_flags = _work_flags(vacancy)
@@ -118,6 +131,9 @@ def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDeta
             f"freshness({freshness}) - exclude({exclude_penalty}) - "
             f"penalties({penalty_score}) = {total}"
         ),
+        "confidence_breakdown": _confidence_breakdown(fields, matched, quality_flags),
+        "noise_breakdown": _noise_breakdown(excluded, risk_flags, quality_flags),
+        "decision_logic": f"total={total}, confidence={confidence}, noise={noise} → {decision}",
         "decision_thresholds": thresholds,
         "preset_name": preset_name,
     }
@@ -126,19 +142,233 @@ def compute_score_details(vacancy: Vacancy, preset: dict[str, Any]) -> ScoreDeta
         vacancy_id=vacancy.id,
         preset_name=preset_name,
         total_score=total,
+        confidence_score=confidence,
+        noise_score=noise,
         decision=decision,
         category_scores=category_scores,
         matched_keywords=matched,
         excluded_keywords=excluded,
         risk_flags=risk_flags + ([f"work:{f}" for f in work_flags if f != "remote"]),
+        quality_flags=quality_flags,
         work_format_flags=work_flags,
         explanation=explanation,
         scored_at=datetime.now(timezone.utc).isoformat(),
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Quality flags
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _set_quality_flags(
+    vacancy: Vacancy,
+    fields: dict[str, str],
+    matched: list[KeywordHit],
+    excluded: list[KeywordHit],
+    risk_flags: list[str],
+    quality_flags: list[str],
+) -> None:
+    """Set quality flags based on match characteristics."""
+    title_matches = [kw for kw in matched if kw.field == "title"]
+    skills_matches = [kw for kw in matched if kw.field == "skills"]
+    desc_only = [
+        kw
+        for kw in matched
+        if kw.field == "description" and kw.field != "title" and kw.field != "skills"
+    ]
+
+    if title_matches:
+        quality_flags.append("title_match")
+    if skills_matches:
+        quality_flags.append("skills_match")
+    if not title_matches and not skills_matches and matched:
+        quality_flags.append("description_only_match")
+    if not vacancy.description_text or not vacancy.description_text.strip():
+        quality_flags.append("missing_description")
+    if not vacancy.salary_from and not vacancy.salary_to:
+        quality_flags.append("missing_salary")
+    # Remote flags
+    schedule = normalize_text(vacancy.schedule_name or "")
+    if "remote" in schedule or "удален" in schedule or "удалён" in schedule:
+        quality_flags.append("remote_confirmed")
+    elif not schedule:
+        quality_flags.append("remote_unclear")
+    if len(excluded) >= 3:
+        quality_flags.append("many_excludes")
+    # Weak title relevance
+    if not title_matches and matched:
+        quality_flags.append("weak_title_relevance")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Confidence computation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _compute_confidence(
+    fields: dict[str, str],
+    matched: list[KeywordHit],
+    quality_flags: list[str],
+    total_score: int,
+) -> int:
+    """Compute confidence score 0-100 based on match quality."""
+    base = 50  # neutral
+
+    # Title match is a strong signal
+    title_matches = [kw for kw in matched if kw.field == "title"]
+    skills_matches = [kw for kw in matched if kw.field == "skills"]
+
+    if title_matches:
+        base += 25
+    if skills_matches:
+        base += 15
+    if title_matches and skills_matches:
+        base += 10  # combined bonus
+
+    # Penalize description-only matches
+    if "description_only_match" in quality_flags:
+        base -= 20
+    if "missing_description" in quality_flags:
+        base -= 10
+    if "weak_title_relevance" in quality_flags:
+        base -= 15
+
+    # More keyword matches = higher confidence
+    if len(matched) >= 5:
+        base += 10
+    elif len(matched) >= 3:
+        base += 5
+
+    # Score-correlated boost
+    if total_score >= 80:
+        base += 10
+    elif total_score >= 60:
+        base += 5
+
+    return max(0, min(100, base))
+
+
+def _confidence_breakdown(
+    fields: dict[str, str],
+    matched: list[KeywordHit],
+    quality_flags: list[str],
+) -> str:
+    """Human-readable confidence breakdown."""
+    parts = ["base=50"]
+    title_matches = [kw for kw in matched if kw.field == "title"]
+    skills_matches = [kw for kw in matched if kw.field == "skills"]
+    if title_matches:
+        parts.append("title_match=+25")
+    if skills_matches:
+        parts.append("skills_match=+15")
+    if title_matches and skills_matches:
+        parts.append("combined=+10")
+    if "description_only_match" in quality_flags:
+        parts.append("desc_only=-20")
+    if "weak_title_relevance" in quality_flags:
+        parts.append("weak_title=-15")
+    return ", ".join(parts)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Noise computation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _compute_noise(
+    excluded: list[KeywordHit],
+    risk_flags: list[str],
+    quality_flags: list[str],
+) -> int:
+    """Compute noise score 0-100 (higher = more noise/suspicion)."""
+    noise = 0
+
+    # Each excluded keyword adds noise
+    noise += len(excluded) * 10
+
+    # Risk flags
+    if "exclude_match" in risk_flags:
+        noise += 15
+    if "exclude_title" in risk_flags:
+        noise += 20
+    if "penalty_match" in risk_flags:
+        noise += 10
+
+    # Quality flags that indicate noise
+    if "many_excludes" in quality_flags:
+        noise += 15
+    if "missing_description" in quality_flags:
+        noise += 10
+    if "remote_unclear" in quality_flags:
+        noise += 5
+
+    return max(0, min(100, noise))
+
+
+def _noise_breakdown(
+    excluded: list[KeywordHit],
+    risk_flags: list[str],
+    quality_flags: list[str],
+) -> str:
+    """Human-readable noise breakdown."""
+    parts = []
+    if excluded:
+        parts.append(f"excludes={len(excluded)}x10")
+    if "exclude_title" in risk_flags:
+        parts.append("exclude_title=+20")
+    if "many_excludes" in quality_flags:
+        parts.append("many_excludes=+15")
+    return ", ".join(parts) if parts else "clean"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Decision (confidence/noise-adjusted)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _compute_decision(
+    total: int,
+    confidence: int,
+    noise: int,
+    thresholds: dict[str, int],
+) -> str:
+    """Compute decision considering total_score, confidence, and noise.
+
+    Confidence/noise adjustment:
+    - High score but low confidence → downgrade to review_later
+    - High noise → boost the effective threshold for strong_match
+    """
+    # Noise-adjusted threshold: each 10 noise points raise threshold by 2
+    noise_penalty = noise // 5  # up to 20 points
+    adjusted_total = total - noise_penalty
+
+    if confidence < 30 and total >= thresholds.get("strong_match", 85):
+        return "review_later"  # Don't trust high score with low confidence
+    if confidence < 20 and total >= thresholds.get("queue", 70):
+        return "review_later"
+
+    if adjusted_total >= thresholds.get("strong_match", 85):
+        return "strong_match"
+    if adjusted_total >= thresholds.get("queue", 70):
+        return "queue"
+    if adjusted_total >= thresholds.get("review_later", 50):
+        return "review_later"
+    if adjusted_total >= thresholds.get("weak_match", 25):
+        return "weak_match"
+    return "auto_hide"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Scoring functions (now using safe matching)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
 def _score_include(
-    preset: dict[str, Any], fields: dict[str, str], matched: list[KeywordHit]
+    preset: dict[str, Any],
+    fields: dict[str, str],
+    matched: list[KeywordHit],
+    quality_flags: list[str],
 ) -> int:
     include = preset.get("include", {})
     any_kw = include.get("any", [])
@@ -146,41 +376,74 @@ def _score_include(
     title_kw = include.get("title", [])
 
     total = 0
+    matched_keywords: set[str] = set()  # Prevent duplicate hits
 
-    # include.any: check all fields
+    # include.any: check all fields using safe matching
     for kw in any_kw:
-        nk = normalize_text(kw)
+        if kw in matched_keywords:
+            continue
         for fname, ftext in fields.items():
-            if nk in ftext:
+            ok, match_type = safe_keyword_match(kw, ftext)
+            if ok:
                 weight = int(10 * FIELD_WEIGHTS.get(fname, 1.0))
                 total += weight
-                matched.append(KeywordHit(keyword=kw, field=fname, weight=weight, reason="include"))
-                break  # one match per keyword
+                matched.append(
+                    KeywordHit(
+                        keyword=kw,
+                        field=fname,
+                        weight=weight,
+                        reason=f"include.{match_type}",
+                    )
+                )
+                matched_keywords.add(kw)
+                break
 
-    # include.title: check title only
+    # include.title: only title/snippet
     for kw in title_kw:
-        nk = normalize_text(kw)
-        if nk in fields["title"]:
-            weight = int(12 * FIELD_WEIGHTS["title"])
-            total += weight
-            matched.append(KeywordHit(keyword=kw, field="title", weight=weight, reason="include"))
-        elif nk in fields["snippet"]:
-            weight = int(8 * FIELD_WEIGHTS["snippet"])
-            total += weight
-            matched.append(KeywordHit(keyword=kw, field="snippet", weight=weight, reason="include"))
+        if kw in matched_keywords:
+            continue
+        for fname in ("title", "snippet"):
+            ftext = fields.get(fname, "")
+            ok, match_type = safe_keyword_match(kw, ftext)
+            if ok:
+                weight = (
+                    int(12 * FIELD_WEIGHTS.get(fname, 1.0))
+                    if fname == "title"
+                    else int(8 * FIELD_WEIGHTS["snippet"])
+                )
+                total += weight
+                matched.append(
+                    KeywordHit(
+                        keyword=kw,
+                        field=fname,
+                        weight=weight,
+                        reason=f"include.{match_type}",
+                    )
+                )
+                matched_keywords.add(kw)
+                break
 
-    # include.all: ALL must match in full text
+    # include.all: ALL keywords must match somewhere
     if all_kw:
         full_text = " ".join(fields.values())
-        if all(normalize_text(kw) in full_text for kw in all_kw):
+        if all(safe_keyword_match(kw, full_text)[0] for kw in all_kw):
             total += 20
             for kw in all_kw:
-                matched.append(KeywordHit(keyword=kw, field="any", weight=10, reason="include.all"))
+                if kw not in matched_keywords:
+                    matched.append(
+                        KeywordHit(keyword=kw, field="any", weight=10, reason="include.all")
+                    )
+                    matched_keywords.add(kw)
 
     return min(90, total)
 
 
-def _score_boost(preset: dict[str, Any], fields: dict[str, str], matched: list[KeywordHit]) -> int:
+def _score_boost(
+    preset: dict[str, Any],
+    fields: dict[str, str],
+    matched: list[KeywordHit],
+    quality_flags: list[str],
+) -> int:
     boost = preset.get("boost", {})
     total = 0
     for fname, rules in boost.items():
@@ -189,11 +452,17 @@ def _score_boost(preset: dict[str, Any], fields: dict[str, str], matched: list[K
         ftext = fields[fname]
         if isinstance(rules, dict):
             for kw, w in rules.items():
-                if normalize_text(kw) in ftext:
+                ok, match_type = safe_keyword_match(kw, ftext)
+                if ok:
                     weight = int(w)
                     total += weight
                     matched.append(
-                        KeywordHit(keyword=kw, field=fname, weight=weight, reason="boost")
+                        KeywordHit(
+                            keyword=kw,
+                            field=fname,
+                            weight=weight,
+                            reason=f"boost.{match_type}",
+                        )
                     )
     return min(30, total)
 
@@ -212,22 +481,45 @@ def _score_exclude(
     full_text = " ".join(fields.values())
 
     for kw in any_kw:
-        nk = normalize_text(kw)
-        if nk in fields["title"]:
+        ok, match_type = safe_keyword_match(kw, fields["title"])
+        if ok:
             penalty += 30
-            excluded.append(KeywordHit(keyword=kw, field="title", weight=-30, reason="exclude"))
+            excluded.append(
+                KeywordHit(
+                    keyword=kw,
+                    field="title",
+                    weight=-30,
+                    reason=f"exclude.{match_type}",
+                )
+            )
             risk_flags.append("exclude_match")
-        elif nk in full_text:
-            penalty += 20
-            excluded.append(KeywordHit(keyword=kw, field="text", weight=-20, reason="exclude"))
-            if "exclude_match" not in risk_flags:
-                risk_flags.append("exclude_match")
+        else:
+            ok2, mt2 = safe_keyword_match(kw, full_text)
+            if ok2:
+                penalty += 20
+                excluded.append(
+                    KeywordHit(
+                        keyword=kw,
+                        field="text",
+                        weight=-20,
+                        reason=f"exclude.{mt2}",
+                    )
+                )
+                if "exclude_match" not in risk_flags:
+                    risk_flags.append("exclude_match")
 
     for kw in title_kw:
-        nk = normalize_text(kw)
-        if nk in fields["title"]:
+        ok, match_type = safe_keyword_match(kw, fields["title"])
+        if ok:
             penalty += 40
-            excluded.append(KeywordHit(keyword=kw, field="title", weight=-40, reason="exclude"))
+            excluded.append(
+                KeywordHit(
+                    keyword=kw,
+                    field="title",
+                    weight=-40,
+                    reason=f"exclude.{match_type}",
+                )
+            )
             risk_flags.append("exclude_title")
 
     return penalty
@@ -247,11 +539,17 @@ def _score_penalties(
         ftext = fields[fname]
         if isinstance(rules, dict):
             for kw, w in rules.items():
-                if normalize_text(kw) in ftext:
+                ok, match_type = safe_keyword_match(kw, ftext)
+                if ok:
                     weight = int(w)
                     total += weight
                     excluded.append(
-                        KeywordHit(keyword=kw, field=fname, weight=-weight, reason="penalty")
+                        KeywordHit(
+                            keyword=kw,
+                            field=fname,
+                            weight=-weight,
+                            reason=f"penalty.{match_type}",
+                        )
                     )
                     if not risk_flags or "penalty_match" not in risk_flags:
                         risk_flags.append("penalty_match")
@@ -266,7 +564,6 @@ def _score_salary(vacancy: Vacancy, preset: dict[str, Any]) -> int:
         bonus += 5
     if vacancy.salary_currency and vacancy.salary_currency.upper() in ("USD", "EUR"):
         bonus += 2
-    # High salary rough bonus
     amount = vacancy.salary_from or vacancy.salary_to or 0
     if amount >= 300000:
         bonus += 3
@@ -287,7 +584,6 @@ def _score_remote(vacancy: Vacancy, preset: dict[str, Any]) -> tuple[int, list[s
         return 10, []
     if is_hybrid:
         return 5, ["hybrid_not_full_remote"]
-    # Unknown or onsite
     return -5, ["not_remote"]
 
 
@@ -309,18 +605,6 @@ def _work_flags(vacancy: Vacancy) -> list[str]:
     if not flags and ("офис" in schedule or "полный день" in schedule):
         flags.append("onsite")
     return flags or ["unknown"]
-
-
-def _compute_decision(total: int, thresholds: dict[str, int]) -> str:
-    if total >= thresholds.get("strong_match", 85):
-        return "strong_match"
-    if total >= thresholds.get("queue", 70):
-        return "queue"
-    if total >= thresholds.get("review_later", 50):
-        return "review_later"
-    if total >= thresholds.get("weak_match", 25):
-        return "weak_match"
-    return "auto_hide"
 
 
 def _to_score_result(details: ScoreDetails) -> ScoreResult:

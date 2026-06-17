@@ -31,11 +31,14 @@ CREATE TABLE IF NOT EXISTS score_details (
     vacancy_id TEXT PRIMARY KEY,
     preset_name TEXT,
     total_score INTEGER NOT NULL,
+    confidence_score INTEGER NOT NULL DEFAULT 0,
+    noise_score INTEGER NOT NULL DEFAULT 0,
     decision TEXT NOT NULL,
     category_scores_json TEXT NOT NULL,
     matched_keywords_json TEXT NOT NULL,
     excluded_keywords_json TEXT NOT NULL,
     risk_flags_json TEXT NOT NULL,
+    quality_flags_json TEXT NOT NULL DEFAULT '[]',
     work_format_flags_json TEXT NOT NULL DEFAULT '[]',
     explanation_json TEXT NOT NULL,
     scored_at TEXT NOT NULL,
@@ -323,6 +326,7 @@ class Storage:
         )
         values.pop("excluded_keywords", None)
         values["risk_flags_json"] = json_dumps(values.pop("risk_flags"))
+        values["quality_flags_json"] = json_dumps(values.pop("quality_flags"))
         values["work_format_flags_json"] = json_dumps(values.pop("work_format_flags"))
         values["explanation_json"] = json_dumps(values.pop("explanation"))
         columns = list(values)

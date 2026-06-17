@@ -94,11 +94,14 @@ class ScoreDetails(BaseModel):
     vacancy_id: str
     preset_name: str
     total_score: int
+    confidence_score: int = 0
+    noise_score: int = 0
     decision: str  # strong_match, queue, review_later, weak_match, auto_hide
     category_scores: dict[str, int] = Field(default_factory=dict)
     matched_keywords: list[KeywordHit] = Field(default_factory=list)
     excluded_keywords: list[KeywordHit] = Field(default_factory=list)
     risk_flags: list[str] = Field(default_factory=list)
+    quality_flags: list[str] = Field(default_factory=list)
     work_format_flags: list[str] = Field(default_factory=list)
     explanation: dict[str, Any] = Field(default_factory=dict)
     scored_at: str

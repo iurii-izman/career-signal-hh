@@ -43,18 +43,39 @@ def command_score_explain(args: argparse.Namespace) -> int:
         return 0
 
     total = details_data.get("total_score", 0)
+    confidence = details_data.get("confidence_score", 0)
+    noise = details_data.get("noise_score", 0)
     decision = details_data.get("decision", "?")
     preset = details_data.get("preset_name", "?")
     cat_scores = json_loads(details_data.get("category_scores_json"), {})
     matched = json_loads(details_data.get("matched_keywords_json"), [])
     excluded = json_loads(details_data.get("excluded_keywords_json"), [])
     risk_flags = json_loads(details_data.get("risk_flags_json"), [])
+    quality_flags = json_loads(details_data.get("quality_flags_json"), [])
     explanation = json_loads(details_data.get("explanation_json"), {})
 
     # Score summary
+    conf_style = "green" if confidence >= 70 else "yellow" if confidence >= 40 else "red"
+    noise_style = "green" if noise <= 20 else "yellow" if noise <= 50 else "red"
     console.print(
-        f"\nTotal Score: [bold]{total}[/bold] | Decision: [bold]{decision}[/bold] | Preset: {preset}"
+        f"\nTotal Score: [bold]{total}[/bold] | "
+        f"Confidence: [bold {conf_style}]{confidence}%[/bold {conf_style}] | "
+        f"Noise: [bold {noise_style}]{noise}%[/bold {noise_style}] | "
+        f"Decision: [bold]{decision}[/bold] | Preset: {preset}"
     )
+
+    # Quality flags
+    if quality_flags:
+        console.print(f"Quality: {', '.join(str(f) for f in quality_flags)}")
+
+    # Confidence/Noise breakdown
+    if explanation:
+        if explanation.get("confidence_breakdown"):
+            console.print(f"[dim]Confidence: {explanation['confidence_breakdown']}[/dim]")
+        if explanation.get("noise_breakdown"):
+            console.print(f"[dim]Noise: {explanation['noise_breakdown']}[/dim]")
+        if explanation.get("decision_logic"):
+            console.print(f"[dim]Decision logic: {explanation['decision_logic']}[/dim]")
 
     # Category scores
     if cat_scores:

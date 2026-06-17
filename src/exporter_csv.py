@@ -12,6 +12,8 @@ from .utils import json_loads
 CSV_FIELDS = [
     "id",
     "total_score",
+    "confidence_score",
+    "noise_score",
     "decision",
     "best_profile",
     "preset_name",
@@ -30,6 +32,7 @@ CSV_FIELDS = [
     "category_scores",
     "match_reasons",
     "risk_flags",
+    "quality_flags",
     "review_status",
     "priority",
     "user_notes",
@@ -93,6 +96,7 @@ def export_jsonl(rows: list[dict[str, Any]], path: str | Path) -> None:
             item["key_skills"] = json_loads(item.pop("key_skills_json", None), [])
             item["match_reasons"] = json_loads(item.pop("match_reasons_json", None), [])
             item["risk_flags"] = json_loads(item.pop("risk_flags_json", None), [])
+            item["quality_flags"] = json_loads(item.pop("quality_flags_json", None), [])
             item["work_format_flags"] = json_loads(item.pop("work_format_flags_json", None), [])
             item.pop("raw_json", None)
             handle.write(json.dumps(item, ensure_ascii=False) + "\n")

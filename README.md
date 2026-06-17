@@ -141,6 +141,42 @@ python -m src.main search-lab export
 - **REFINE** — низкий avg score или высокий found/loaded разрыв
 - **REMOVE** — нет результатов или высокая доля rejected
 
+## Scoring V3 — Confidence & Safe Matching
+
+### Безопасный matching
+
+Короткие ключевые слова (≤3 символов) — `ai`, `api`, `crm`, `qa` — проверяются
+только как **целые токены**, а не подстроки:
+
+```
+"ai" in "detail"  → NO  (false positive prevented)
+"ai" in "ai engineer" → YES (whole token)
+"api" in "fastapi" → NO
+"api" in "api integration" → YES
+```
+
+### Confidence & Noise
+
+Каждая вакансия получает:
+
+| Параметр      | Диапазон | Описание                                                |
+|---------------|----------|--------------------------------------------------------|
+| `confidence`  | 0–100    | Насколько уверенно мы считаем этот match хорошим       |
+| `noise`       | 0–100    | Уровень шума: excludes, penalties, missing data        |
+| `quality_flags` | list   | Метки: title_match, skills_match, missing_salary и др. |
+
+### Decision logic
+
+- `total_score` + `confidence` + `noise` = `decision`
+- Высокий score но низкий confidence → `review_later` (не `strong_match`)
+- Много excludes → увеличивает noise → снижает adjusted score
+- Title+skills match → boost confidence на +35
+
+### HTML фильтры
+
+- **Скрыть low confidence** — скрывает вакансии с confidence < 40%
+- **Скрыть high noise** — скрывает вакансии с noise > 50%
+
 ## Безопасные режимы поиска (Safe Search Modes)
 
 CareerSignal HH поддерживает три режима поиска для защиты API HH от избыточной
