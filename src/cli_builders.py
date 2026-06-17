@@ -20,6 +20,7 @@ from .commands import (
     export,
     health,
     import_vacancy,
+    llm,
     maintenance,
     presets,
     profiles,
@@ -315,6 +316,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_campaigns_parser(sub)
     build_import_parser(sub)
     build_report_parser(sub)
+    build_llm_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -513,3 +515,32 @@ def build_report_parser(sub: argparse._SubParsersAction) -> None:
     w.set_defaults(func=report.command_report_weekly)
 
     ps.add_parser("export").set_defaults(func=report.command_report_export)
+
+
+def build_llm_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("llm")
+    ps = p.add_subparsers(dest="llm_command", required=True)
+
+    ps.add_parser("status").set_defaults(func=llm.command_llm_status)
+
+    prompt = ps.add_parser("prompt")
+    prompt_ps = prompt.add_subparsers(dest="prompt_command", required=True)
+
+    ap = prompt_ps.add_parser("apply-pack")
+    ap.add_argument("vacancy_id")
+    ap.add_argument("-y", "--yes", action="store_true")
+    ap.set_defaults(func=llm.command_llm_prompt_apply_pack)
+
+    sr = prompt_ps.add_parser("score-review")
+    sr.add_argument("vacancy_id")
+    sr.add_argument("-y", "--yes", action="store_true")
+    sr.set_defaults(func=llm.command_llm_prompt_score_review)
+
+    pi = prompt_ps.add_parser("preset-improve")
+    pi.add_argument("preset_name")
+    pi.add_argument("-y", "--yes", action="store_true")
+    pi.set_defaults(func=llm.command_llm_prompt_preset_improve)
+
+    ep = ps.add_parser("export-prompts")
+    ep.add_argument("--top", type=int, default=5)
+    ep.set_defaults(func=llm.command_llm_export_prompts)

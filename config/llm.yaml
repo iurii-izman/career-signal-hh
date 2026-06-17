@@ -1,0 +1,7 @@
+llm:
+  enabled: false
+  provider: manual
+  privacy_mode: strict
+  include_description: true
+  max_description_chars: 3000
+  apply_template: default
