@@ -830,6 +830,37 @@ python -m src.main db backup
 python -m src.main db purge-samples
 ```
 
+## File maintenance (retention cleanup)
+
+Управление старыми файлами: логи, бэкапы, exports, apply packs.
+Политика хранения: `config/maintenance.yaml`.
+
+```powershell
+# Посмотреть отчёт — что подлежит удалению
+python -m src.main maintenance report
+
+# Dry-run (default) — показать, но не удалять
+python -m src.main maintenance cleanup --dry-run
+
+# Реальное удаление с подтверждением
+python -m src.main maintenance cleanup --yes
+```
+
+Retention defaults:
+- logs: 30 дней
+- backups: 10 последних или 30 дней
+- exports/vacancies_report.html: только текущий
+- exports/apply_packs: 60 дней или 100 последних
+- config/backups: 20 последних
+
+Защищены от удаления:
+- `data/*.sqlite`
+- `.env`
+- `data/calibration_suggestions.json`
+
+Dry-run — безопасный default; `--yes` требуется для реального удаления.
+Cleanup пишет maintenance log в `logs/`.
+
 ## Тесты
 
 ```powershell

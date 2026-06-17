@@ -1,0 +1,37 @@
+# Maintenance retention policy
+# All time values in days.  count = keep max N files.
+
+retention:
+  logs:
+    days: 30
+    path: "logs"
+    pattern: "*.log"
+
+  backups:
+    days: 30
+    count: 10
+    path: "backups"
+    pattern: "vacancies_*.sqlite"
+
+  exports_html:
+    count: 1
+    path: "exports"
+    pattern: "vacancies_report.html"
+
+  apply_packs:
+    days: 60
+    count: 100
+    path: "exports/apply_packs"
+    pattern: "*.md"
+    # Also cleans matching .html files
+
+  config_backups:
+    count: 20
+    path: "config/backups"
+    pattern: "*.yaml"
+
+  # Never deleted (listed for awareness)
+  protected:
+    - "data/*.sqlite"
+    - ".env"
+    - "data/calibration_suggestions.json"

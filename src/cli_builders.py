@@ -17,6 +17,7 @@ from .commands import (
     db,
     doctor,
     export,
+    maintenance,
     presets,
     profiles,
     quality,
@@ -302,6 +303,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_quality_parser(sub)
     build_cockpit_parser(sub)
     build_scheduler_parser(sub)
+    build_maintenance_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -356,3 +358,15 @@ def build_scheduler_parser(sub: argparse._SubParsersAction) -> None:
         func=scheduler.command_scheduler_print_windows_task
     )
     ps.add_parser("status").set_defaults(func=scheduler.command_scheduler_status)
+
+
+def build_maintenance_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("maintenance")
+    ps = p.add_subparsers(dest="maintenance_command", required=True)
+    ps.add_parser("report").set_defaults(func=maintenance.command_maintenance_report)
+    c = ps.add_parser("cleanup")
+    c.add_argument(
+        "--dry-run", action="store_true", default=True, help="Preview only, no deletion (default)"
+    )
+    c.add_argument("-y", "--yes", action="store_true", help="Execute deletion")
+    c.set_defaults(func=maintenance.command_maintenance_cleanup)

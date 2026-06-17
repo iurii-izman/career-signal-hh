@@ -28,5 +28,9 @@ log "Generating cockpit..."
 python -m src.main cockpit export 2>&1 | tee -a "$LOGFILE"
 log "Cockpit exit code: $?"
 
+log "Running maintenance report..."
+python -m src.main maintenance report 2>&1 | tee -a "$LOGFILE"
+log "Maintenance exit code: $?"
+
 log "=== Daily run complete ==="
 exit $AUTO_EXIT

@@ -34,5 +34,10 @@ Write-Log "Generating cockpit..."
 python -m src.main cockpit export 2>&1 | Tee-Object -FilePath $LogFile -Append
 Write-Log "Cockpit exit code: $LASTEXITCODE"
 
+# Maintenance report (dry-run only, no deletion)
+Write-Log "Running maintenance report..."
+python -m src.main maintenance report 2>&1 | Tee-Object -FilePath $LogFile -Append
+Write-Log "Maintenance exit code: $LASTEXITCODE"
+
 Write-Log "=== Daily run complete ==="
 exit $AutoExit
