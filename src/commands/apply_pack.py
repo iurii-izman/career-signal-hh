@@ -13,6 +13,49 @@ from ..utils import json_loads
 
 console = Console()
 
+TEMPLATES_PATH = "config/apply_templates.yaml"
+
+
+# ── Template loading ───────────────────────────────────────────────────────
+
+
+def _load_templates() -> dict[str, Any]:
+    try:
+        with open(TEMPLATES_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+
+
+def _resolve_template(preset_name: str | None, lang: str, style: str) -> str:
+    """
+    Resolve the best template for (preset, lang, style).
+    Fallback order: preset.lang.style → default.lang.style → default.ru.medium → builtin.
+    """
+    data = _load_templates()
+    tmpls = data.get("templates", {})
+
+    # Try exact match
+    if preset_name and preset_name in tmpls:
+        preset_tmpl = tmpls[preset_name]
+        if lang in preset_tmpl and style in preset_tmpl[lang]:
+            return preset_tmpl[lang][style]
+
+    # Try default
+    default = tmpls.get("default", {})
+    if lang in default and style in default[lang]:
+        return default[lang][style]
+    if "ru" in default and "medium" in default["ru"]:
+        return default["ru"]["medium"]
+
+    # Hardcoded fallback
+    if lang == "ru":
+        return "Здравствуйте!\n\n{candidate_name}. {candidate_summary}\n\nС уважением,\n{candidate_name}"
+    return "Hello!\n\n{candidate_name}. {candidate_summary}\n\nBest regards,\n{candidate_name}"
+
+
+# ── Candidate data ─────────────────────────────────────────────────────────
+
 
 def _load_candidate() -> dict[str, Any]:
     try:
@@ -25,14 +68,9 @@ def _load_candidate() -> dict[str, Any]:
 def _pick_profile(preset_name: str | None) -> str:
     if preset_name and preset_name.startswith("ai"):
         return "ai"
-    if preset_name and preset_name.startswith("bitrix"):
+    if preset_name and any(preset_name.startswith(p) for p in ("bitrix", "crm")):
         return "bitrix"
     return "default"
-
-
-def _slug(text: str) -> str:
-    text = re.sub(r"[^\w\s-]", "", text.lower())
-    return re.sub(r"[-\s]+", "-", text).strip("-")[:60]
 
 
 def _load_candidate_text(lang: str, key: str, preset_name: str | None) -> str:
@@ -57,10 +95,91 @@ def _load_candidate_text(lang: str, key: str, preset_name: str | None) -> str:
     return ""
 
 
+# ── Fit summary ─────────────────────────────────────────────────────────────
+
+
+def _build_fit_summary(details: dict | None, vacancy: dict, lang: str) -> dict[str, str]:
+    """Build a structured fit summary from score_details."""
+    total = details.get("total_score", 0) if details else 0
+    decision = details.get("decision", "") if details else ""
+    matched = json_loads(details.get("matched_keywords_json"), []) if details else []
+    category = json_loads(details.get("category_scores_json"), {}) if details else {}
+    risks = (
+        json_loads(details.get("risk_flags_json"), [])
+        if details
+        else json_loads(vacancy.get("risk_flags_json"), [])
+    )
+    work = json_loads(vacancy.get("work_format_flags_json"), [])
+    salary_from = vacancy.get("salary_from")
+    salary_to = vacancy.get("salary_to")
+
+    is_ru = lang == "ru"
+
+    # Fit reasons
+    reasons = []
+    for kw in matched[:5]:
+        k = kw.get("keyword", "")
+        f = kw.get("field", "")
+        if k:
+            label = {
+                "title": "title",
+                "skills": "skills",
+                "snippet": "snippet",
+                "description": "desc",
+            }.get(f, f)
+            reasons.append(f"**{k}** ({label})")
+
+    # Concerns
+    concerns = []
+    if not salary_from and not salary_to:
+        concerns.append("Зарплата не указана" if is_ru else "Salary not specified")
+    if risks:
+        for r in risks[:3]:
+            concerns.append(str(r))
+    if "remote" not in work and vacancy.get("schedule_name", "").lower() not in (
+        "remote",
+        "удаленная работа",
+    ):
+        concerns.append("Не указан remote формат" if is_ru else "Remote format not confirmed")
+
+    # Strategy
+    if decision == "strong_match" and total >= 85:
+        strategy = (
+            "Уверенный отклик, акцент на релевантный опыт"
+            if is_ru
+            else "Confident application, highlight relevant experience"
+        )
+    elif total >= 70:
+        strategy = (
+            "Отклик с акцентом на transferable skills"
+            if is_ru
+            else "Apply emphasizing transferable skills"
+        )
+    else:
+        strategy = (
+            "Оценить fit перед откликом, возможны gaps"
+            if is_ru
+            else "Assess fit before applying, possible gaps"
+        )
+
+    return {
+        "reasons": "\n".join(f"- {r}" for r in reasons) if reasons else ("-" if is_ru else "-"),
+        "concerns": "\n".join(f"- {c}" for c in concerns) if concerns else ("-" if is_ru else "-"),
+        "strategy": strategy,
+        "decision": decision,
+        "total_score": str(total),
+    }
+
+
+# ── Generate sections ──────────────────────────────────────────────────────
+
+
 def _generate_md(
     vacancy: dict[str, Any],
     details: dict[str, Any] | None,
     lang: str,
+    style: str = "medium",
+    template_name: str | None = None,
 ) -> str:
     name = vacancy.get("name", "?")
     company = vacancy.get("employer_name", "?")
@@ -82,6 +201,7 @@ def _generate_md(
         if details
         else json_loads(vacancy.get("risk_flags_json"), [])
     )
+    work = json_loads(vacancy.get("work_format_flags_json"), [])
 
     salary = _fmt_salary(vacancy, lang)
     schedule = vacancy.get("schedule_name") or ""
@@ -89,39 +209,40 @@ def _generate_md(
     published = (vacancy.get("published_at") or "")[:10]
     desc = vacancy.get("description_text") or ""
 
+    # Candidate data
     candidate_name = _load_candidate_text(lang, "name", preset)
     summary = _load_candidate_text(lang, "summary", preset)
     location = _load_candidate_text(lang, "location", preset)
     gh = _load_candidate_text(lang, "github", preset)
     li = _load_candidate_text(lang, "linkedin", preset)
+    availability = _load_candidate_text(lang, "availability", preset)
 
-    # Build sections
-    if lang == "ru":
-        greeting = "Здравствуйте!"
-        why_header = "## Почему подходит"
-        risks_header = "## Риски / что проверить до отклика"
-        checklist_header = "## Чеклист ручного отклика"
-        cover_header = "## Черновик cover letter"
-        closing = "С уважением,"
-        lang_intro_text = "Меня зовут"
-        lang_at_text = "в"
-        lang_experience_text = "так как мой опыт связан с"
-        top_areas = _top_matched_areas(matched, lang)
-        fit_bullets = _fit_bullets(matched, desc, lang)
-        risk_bullets = _risk_bullets(excluded, risks, vacancy, lang)
-    else:
-        greeting = "Hello!"
-        why_header = "## Why it fits"
-        risks_header = "## Risks / verify before applying"
-        checklist_header = "## Manual application checklist"
-        cover_header = "## Cover letter draft"
-        closing = "Best regards,"
-        lang_intro_text = "My name is"
-        lang_at_text = "at"
-        lang_experience_text = "as my experience aligns with"
-        top_areas = _top_matched_areas(matched, lang)
-        fit_bullets = _fit_bullets(matched, desc, lang)
-        risk_bullets = _risk_bullets(excluded, risks, vacancy, lang)
+    # Fit summary
+    fit = _build_fit_summary(details, vacancy, lang)
+
+    # Keywords
+    top_kw = ", ".join(kw.get("keyword", "") for kw in matched[:5] if kw.get("keyword")) or "-"
+
+    # Resolve cover letter template
+    tmpl = _resolve_template(template_name or preset, lang, style)
+    cover_letter = tmpl.format(
+        candidate_name=candidate_name,
+        vacancy_title=name,
+        company=company,
+        top_keywords=top_kw,
+        candidate_summary=summary,
+        github=gh or "",
+        linkedin=li or "",
+        availability=availability,
+        location=location,
+        decision=decision,
+        total_score=str(total_score),
+        risks_summary=", ".join(str(r) for r in risks[:3]) if risks else "none",
+        fit_reasons=fit["reasons"],
+        salary=salary,
+    )
+
+    is_ru = lang == "ru"
 
     return f"""# Apply Pack: {name}
 
@@ -142,13 +263,33 @@ def _generate_md(
 - **Matched:** {", ".join(f"{kw.get('keyword', '')}({kw.get('field', '')})" for kw in matched[:8])}
 - **Risks:** {", ".join(str(r) for r in risks[:5]) if risks else "none"}
 
-{why_header}
-{fit_bullets}
+## 🔍 Fit Analysis
+- **Verdict:** {decision or "N/A"} (score {total_score})
+- **Why it fits:**
+{fit["reasons"]}
 
-{risks_header}
-{risk_bullets}
+- **Potential concerns:**
+{fit["concerns"]}
 
-{checklist_header}
+- **Strategy:** {fit["strategy"]}
+
+## 🤔 Questions to Ask Recruiter
+- {"Как организован процесс онбординга?" if is_ru else "What does the onboarding process look like?"}
+- {"Какие ключевые метрики на первые 3 месяца?" if is_ru else "What are the key success metrics for the first 3 months?"}
+- {"Какой стек / инструменты используются в команде?" if is_ru else "What stack / tools does the team use?"}
+- {"Как выглядит типичный рабочий день?" if is_ru else "What does a typical workday look like?"}
+
+## 📋 Contract / Remote Checks
+- {"Проверить remote формат (schedule: " + schedule + ")" if is_ru else "Verify remote format (schedule: " + schedule + ")"}
+- {"Проверить страну / часовой пояс" if is_ru else "Verify country / timezone restrictions"}
+- {"Проверить детали зарплаты: " + salary if is_ru else "Verify salary details: " + salary}
+- {"Проверить тип занятости: " + (vacancy.get("employment_name") or "-") if is_ru else "Verify employment type: " + (vacancy.get("employment_name") or "-")}
+- {"Уточнить формат контракта / ИП / самозанятость" if is_ru else "Clarify contract format / self-employment options"}
+
+## ⚠️ Risk Check
+{_risk_bullets(excluded, risks, vacancy, lang)}
+
+## ✅ Application Checklist
 - Open HH URL: {url}
 - Check remote availability
 - Check country/timezone restrictions
@@ -157,56 +298,10 @@ def _generate_md(
 - Send manually via HH
 - Then run: `python -m src.main review apply {vid} --date today`
 
-{cover_header}
+## 📝 Cover Letter Draft ({style})
 
-{greeting}
-
-{candidate_name}. {lang_intro_text} **{name}** {lang_at_text} **{company}**, {lang_experience_text} {top_areas}.
-
-{summary}
-
-{closing}
-{candidate_name}
-{gh}
-{li}
+{cover_letter}
 """
-
-
-def _top_matched_areas(matched: list[dict], lang: str) -> str:
-    if lang == "ru":
-        default = "релевантными технологиями"
-    else:
-        default = "relevant technologies"
-    if not matched:
-        return default
-    areas = list(dict.fromkeys(kw.get("keyword", "") for kw in matched[:5]))
-    return ", ".join(areas)
-
-
-def _fit_bullets(matched: list[dict], desc: str, lang: str) -> str:
-    lines = []
-    seen = set()
-    for kw in matched[:6]:
-        k = kw.get("keyword", "")
-        field = kw.get("field", "")
-        if k not in seen:
-            seen.add(k)
-            snippet = _find_snippet(desc, k)
-            lines.append(f"- **{k}** ({field})" + (f": _{snippet}_" if snippet else ""))
-    if not lines:
-        lines.append("- (no detailed match data — run score rescore for details)")
-    return "\n".join(lines)
-
-
-def _find_snippet(desc: str, keyword: str) -> str:
-    if not desc or not keyword:
-        return ""
-    idx = desc.lower().find(keyword.lower())
-    if idx < 0:
-        return ""
-    start = max(0, idx - 30)
-    end = min(len(desc), idx + len(keyword) + 50)
-    return desc[start:end].strip()
 
 
 def _risk_bullets(excluded: list[dict], risks: list[str], vacancy: dict, lang: str) -> str:
@@ -217,15 +312,11 @@ def _risk_bullets(excluded: list[dict], risks: list[str], vacancy: dict, lang: s
         lines.append(f"- ⚠️ Risk: {r}")
     salary = vacancy.get("salary_from") or vacancy.get("salary_to")
     if not salary:
-        if lang == "ru":
-            lines.append("- ⚠️ Зарплата не указана")
-        else:
-            lines.append("- ⚠️ Salary not specified")
+        lines.append("- ⚠️ Зарплата не указана" if lang == "ru" else "- ⚠️ Salary not specified")
     if not lines:
-        if lang == "ru":
-            lines.append("- Явных рисков не обнаружено")
-        else:
-            lines.append("- No obvious risks detected")
+        lines.append(
+            "- Явных рисков не обнаружено" if lang == "ru" else "- No obvious risks detected"
+        )
     return "\n".join(lines)
 
 
@@ -243,8 +334,15 @@ def _fmt_salary(vacancy: dict, lang: str = "ru") -> str:
     return "–".join(parts) + (f" {curr}" if curr else "")
 
 
+def _slug(text: str) -> str:
+    text = re.sub(r"[^\w\s-]", "", text.lower())
+    return re.sub(r"[-\s]+", "-", text).strip("-")[:60]
+
+
+# ── HTML ────────────────────────────────────────────────────────────────────
+
+
 def _generate_html(md_content: str, title: str) -> str:
-    # Simple converter: headings, bold, lists, links, code
     html_content = md_content
     html_content = re.sub(r"^### (.+)", r"<h3>\1</h3>", html_content, flags=re.MULTILINE)
     html_content = re.sub(r"^## (.+)", r"<h2>\1</h2>", html_content, flags=re.MULTILINE)
@@ -271,11 +369,22 @@ ul{{padding-left:20px}} li{{margin:4px 0}} a{{color:#67e8f9}}
 </body></html>"""
 
 
-def _write_pack(vacancy: dict, details: dict | None, lang: str, fmt: str, out_dir: Path) -> Path:
+# ── File I/O ────────────────────────────────────────────────────────────────
+
+
+def _write_pack(
+    vacancy: dict,
+    details: dict | None,
+    lang: str,
+    fmt: str,
+    out_dir: Path,
+    style: str,
+    template_name: str | None,
+) -> Path:
     name = vacancy.get("name", "vacancy")
     vid = vacancy.get("id", "")
     slug = _slug(name)
-    md_content = _generate_md(vacancy, details, lang)
+    md_content = _generate_md(vacancy, details, lang, style, template_name)
 
     paths = []
     if fmt in ("md", "both"):
@@ -299,10 +408,15 @@ def _save_review(storage, vacancy_id: str, md_content: str, overwrite: bool) -> 
     return True
 
 
+# ── Main command ────────────────────────────────────────────────────────────
+
+
 def command_apply_pack(args: argparse.Namespace) -> int:
     storage, _, _ = _services()
     lang = args.lang or "ru"
     fmt = args.format or "both"
+    style = getattr(args, "style", None) or "medium"
+    template_name = getattr(args, "template", None)
     out_dir = Path("exports/apply_packs")
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -339,13 +453,15 @@ def command_apply_pack(args: argparse.Namespace) -> int:
     for vacancy in vacancies:
         vid = vacancy["id"]
         details = storage.get_score_details(vid)
-        paths = _write_pack(vacancy, details, lang, fmt, out_dir)
-        console.print(f"[green]{vid}: {paths.name}[/green]")
+        paths = _write_pack(vacancy, details, lang, fmt, out_dir, style, template_name)
+        console.print(f"[green]{vid}: {paths.name} ({style})[/green]")
 
         if args.save_review:
-            md_content = _generate_md(vacancy, details, lang)
+            md_content = _generate_md(vacancy, details, lang, style, template_name)
             if _save_review(storage, vid, md_content, args.overwrite):
                 saved_drafts += 1
+            elif not args.overwrite:
+                console.print(f"[dim]{vid}: draft already exists, use --overwrite[/dim]")
 
     if saved_drafts:
         console.print(f"[green]Saved {saved_drafts} cover letter drafts to review.[/green]")

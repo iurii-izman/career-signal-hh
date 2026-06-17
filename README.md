@@ -418,27 +418,50 @@ parameters. Их допустимые значения следует сверя
 ## Apply Pack: подготовка к ручному отклику
 
 Генерирует Markdown и HTML файлы с полным разбором вакансии,
-fit analysis, рисками, чеклистом и черновиком cover letter.
+fit analysis, рисками, чеклистом и cover letter по шаблону.
 **Не отправляет отклики.** Только готовит материалы.
 
+Шаблоны: `config/apply_templates.yaml` — preset-specific,
+с поддержкой short/medium/detailed стилей и ru/en языков.
+Fallback: preset → default → builtin.
+
 ```powershell
-# Для одной вакансии
+# Для одной вакансии (medium style по умолчанию)
 python -m src.main apply-pack 123456789
-python -m src.main apply-pack 123456789 --lang en
+python -m src.main apply-pack 123456789 --lang en --style short
+
+# С явным шаблоном
+python -m src.main apply-pack 123456789 --template ai_rag_remote --style detailed
 
 # Для топ-10 strong_match вакансий
-python -m src.main apply-pack --top 10 --decision strong_match
+python -m src.main apply-pack --top 10 --decision strong_match --style medium
 python -m src.main apply-pack --preset ai_rag_remote --limit 5
 
 # С сохранением черновика в review
 python -m src.main apply-pack 123456789 --save-review
+python -m src.main apply-pack 123456789 --save-review --overwrite
+```
+
+Секции apply-pack:
+- **Vacancy + Score** — базовая информация и scoring
+- **Fit Analysis** — verdict, why it fits, concerns, strategy
+- **Questions to Ask** — вопросы рекрутеру
+- **Contract / Remote Checks** — чеклист проверок
+- **Risk Check** — excluded keywords и риски
+- **Application Checklist** — пошаговый план отклика
+- **Cover Letter Draft** — сгенерированный по шаблону
+
+Draft management:
+```powershell
+# Посмотреть сохранённый черновик
+python -m src.main review draft 123456789
+
+# Очистить черновик
+python -m src.main review clear-draft 123456789 --yes
 ```
 
 Файлы создаются в `exports/apply_packs/<id>_<slug>.md` и `.html`.
 При `--top`/`--limit` дополнительно создаётся `index.html`.
-
-Требуется `config/candidate.yaml` с именем, локацией, ссылками
-и профильными summary. Без него используются безопасные defaults.
 
 ## Daily review queue
 

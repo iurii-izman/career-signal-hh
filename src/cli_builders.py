@@ -64,6 +64,8 @@ def build_apply_pack_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--min-score", type=int, default=0)
     p.add_argument("--lang", choices=["ru", "en"], default="ru")
     p.add_argument("--format", choices=["md", "html", "both"], default="both")
+    p.add_argument("--style", choices=["short", "medium", "detailed"], default="medium")
+    p.add_argument("--template", help="Override template (e.g. ai_rag_remote)")
     p.add_argument("--save-review", action="store_true")
     p.add_argument("--overwrite", action="store_true")
     p.set_defaults(func=apply_pack.command_apply_pack)
@@ -239,6 +241,14 @@ def build_review_parser(sub: argparse._SubParsersAction) -> None:
     q.add_argument("--dedupe", action="store_true", help="Show only best per duplicate cluster")
     q.set_defaults(func=review.command_review_queue)
     ps.add_parser("next-best").set_defaults(func=review.command_review_next_best)
+    # Draft management
+    dr = ps.add_parser("draft")
+    dr.add_argument("vacancy_id")
+    dr.set_defaults(func=review.command_review_draft)
+    cd = ps.add_parser("clear-draft")
+    cd.add_argument("vacancy_id")
+    cd.add_argument("-y", "--yes", action="store_true")
+    cd.set_defaults(func=review.command_review_clear_draft)
     # Bulk
     for name, fn, extra in [
         (

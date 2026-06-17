@@ -271,6 +271,39 @@ def command_review_next_best(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── Draft management ────────────────────────────────────────────────────────
+
+
+def command_review_draft(args: argparse.Namespace) -> int:
+    storage = _review_storage()
+    review = storage.get_review(args.vacancy_id)
+    draft = review.get("cover_letter_draft")
+    if not draft:
+        console.print(f"[yellow]No draft for '{args.vacancy_id}'.[/yellow]")
+        console.print("[dim]Generate one with: apply-pack ID --save-review[/dim]")
+        return 0
+    console.print(f"[bold]Cover Letter Draft for {args.vacancy_id}:[/bold]\n")
+    console.print(draft)
+    return 0
+
+
+def command_review_clear_draft(args: argparse.Namespace) -> int:
+    storage = _review_storage()
+    review = storage.get_review(args.vacancy_id)
+    if not review.get("cover_letter_draft"):
+        console.print(f"[yellow]No draft to clear for '{args.vacancy_id}'.[/yellow]")
+        return 0
+    if not args.yes:
+        from rich.prompt import Confirm
+
+        if not Confirm.ask(f"Clear draft for {args.vacancy_id}?", default=False):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return 0
+    storage.upsert_review(args.vacancy_id, cover_letter_draft=None)
+    console.print(f"[green]Draft cleared for {args.vacancy_id}.[/green]")
+    return 0
+
+
 def _bulk_action(
     storage: Storage,
     new_status: str,
