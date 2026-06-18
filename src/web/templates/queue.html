@@ -1,0 +1,147 @@
+{% extends "base.html" %} {% block content %}
+<div class="queue-layout" id="queue-app">
+    <!-- Filter panel -->
+    <aside class="queue-filters">
+        <div class="filter-group">
+            <label>Min Score</label>
+            <input
+                type="number"
+                id="f-min-score"
+                value="70"
+                min="0"
+                max="100"
+            />
+        </div>
+        <div class="filter-group">
+            <label>Decision</label>
+            <select id="f-decision">
+                <option value="strong_match,queue">Strong + Queue</option>
+                <option value="strong_match">Strong Match</option>
+                <option value="">All</option>
+                <option value="queue">Queue</option>
+                <option value="weak_match">Weak Match</option>
+                <option value="auto_hide">Auto Hide</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Review Status</label>
+            <select id="f-status">
+                <option value="">All</option>
+                <option value="new">New</option>
+                <option value="interesting">Interesting</option>
+                <option value="maybe">Maybe</option>
+                <option value="applied">Applied</option>
+                <option value="rejected">Rejected</option>
+                <option value="archived">Archived</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Preset</label>
+            <input
+                type="text"
+                id="f-preset"
+                placeholder="preset name"
+                style="width: 100%"
+            />
+        </div>
+        <div class="filter-group filter-checks">
+            <label class="check-label"
+                ><input type="checkbox" id="f-remote" checked /> Remote
+                only</label
+            >
+            <label class="check-label"
+                ><input type="checkbox" id="f-salary" /> With salary</label
+            >
+            <label class="check-label"
+                ><input type="checkbox" id="f-hide-risk" /> Hide risk</label
+            >
+            <label class="check-label"
+                ><input type="checkbox" id="f-new-only" /> New only</label
+            >
+            <label class="check-label"
+                ><input type="checkbox" id="f-dedupe" checked /> Dedupe</label
+            >
+        </div>
+        <button class="btn btn-primary" style="width: 100%" id="f-apply">
+            Apply Filters
+        </button>
+    </aside>
+
+    <!-- Main area -->
+    <main class="queue-main">
+        <!-- Top action bar -->
+        <div class="queue-topbar">
+            <div class="queue-topbar-left">
+                <span class="queue-count" id="queue-count">0 results</span>
+            </div>
+            <div class="queue-topbar-right">
+                <button class="btn btn-sm" id="btn-bulk-archive">
+                    Archive auto_hide
+                </button>
+                <button class="btn btn-sm" id="btn-bulk-reject">
+                    Reject score &lt;35
+                </button>
+                <button class="btn btn-sm" id="btn-bulk-interesting">
+                    Interesting 85+
+                </button>
+                <button class="btn btn-sm" id="btn-apply-top">
+                    Top 5 Apply Packs
+                </button>
+                <button class="btn btn-primary btn-sm" id="btn-refresh">
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Vacancy cards -->
+        <div class="queue-cards" id="queue-cards">
+            <div class="queue-empty">Loading...</div>
+        </div>
+
+        <!-- Detail drawer -->
+        <div
+            class="queue-drawer-backdrop"
+            id="drawer-backdrop"
+            style="display: none"
+        ></div>
+        <div class="queue-drawer" id="drawer" style="display: none">
+            <div class="drawer-header">
+                <h3 id="drawer-title">Vacancy Detail</h3>
+                <button class="queue-close" id="drawer-close">&times;</button>
+            </div>
+            <div class="drawer-body" id="drawer-body">Loading...</div>
+        </div>
+
+        <!-- Bulk confirm modal -->
+        <div class="queue-overlay" id="confirm-overlay" style="display: none">
+            <div class="queue-panel confirm-panel">
+                <div class="queue-header">
+                    <h2 id="confirm-title">Confirm Bulk Action</h2>
+                </div>
+                <div class="queue-body">
+                    <p id="confirm-message"></p>
+                    <label class="check-label" style="margin-top: 12px">
+                        <input type="checkbox" id="confirm-force" /> Force
+                        (include protected: applied/interview/offer)
+                    </label>
+                    <div
+                        style="
+                            margin-top: 16px;
+                            display: flex;
+                            gap: 8px;
+                            justify-content: flex-end;
+                        "
+                    >
+                        <button class="btn btn-secondary" id="confirm-cancel">
+                            Cancel
+                        </button>
+                        <button class="btn btn-danger" id="confirm-ok">
+                            Confirm
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

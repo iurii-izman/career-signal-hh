@@ -1,0 +1,163 @@
+{% extends "base.html" %} {% block content %}
+<div class="app">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <h1 class="brand-name">{{ app_name }}</h1>
+            <span class="brand-version">v{{ app_version }}</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-item active"
+                ><span class="nav-icon">&#9632;</span> Dashboard</a
+            >
+            <a href="/queue" class="nav-item"
+                ><span class="nav-icon">&#9776;</span> Review Queue</a
+            >
+            <a href="/presets" class="nav-item"
+                ><span class="nav-icon">&#9881;</span> Presets</a
+            >
+            <a href="/campaigns" class="nav-item"
+                ><span class="nav-icon">&#9733;</span> Campaigns</a
+            >
+            <a href="/settings" class="nav-item"
+                ><span class="nav-icon">&#9881;</span> Settings</a
+            >
+        </nav>
+    </aside>
+    <main class="main">
+        <header class="status-bar">
+            <span class="status-indicator" id="db-status">DB: loading...</span>
+            <span class="status-indicator" id="health-status"
+                >Health: loading...</span
+            >
+            <span class="status-spacer"></span>
+            <span class="status-clock" id="status-clock"></span>
+        </header>
+        <section class="content" id="content-area">
+            <!-- Active Job -->
+            <div class="job-card" id="job-card" style="display: none">
+                <div class="job-card-header">
+                    <span class="job-card-title" id="job-name">-</span
+                    ><span class="job-card-status" id="job-status">-</span>
+                </div>
+                <div class="job-progress-bar">
+                    <div
+                        class="job-progress-fill"
+                        id="job-progress-fill"
+                        style="width: 0%"
+                    ></div>
+                </div>
+                <div class="job-card-footer">
+                    <span class="job-progress-text" id="job-message">-</span
+                    ><span class="job-progress-pct" id="job-progress-pct"
+                        >0%</span
+                    >
+                </div>
+                <div class="job-card-actions">
+                    <button
+                        class="btn btn-danger btn-sm"
+                        id="job-cancel-btn"
+                        style="display: none"
+                        data-action="job-cancel"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+
+            <!-- Today's Action Plan -->
+            <div class="section-header"><h2>📋 Today's Plan</h2></div>
+            <div class="action-plan" id="action-plan"></div>
+
+            <!-- Stats row -->
+            <div class="section-header"><h2>Status</h2></div>
+            <div class="card-row" id="stats-cards">
+                <div class="card">
+                    <div class="card-value" id="stat-total">-</div>
+                    <div class="card-label">Total</div>
+                </div>
+                <div class="card">
+                    <div class="card-value accent" id="stat-new">-</div>
+                    <div class="card-label">New 24h</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="stat-pending">-</div>
+                    <div class="card-label">Queue</div>
+                </div>
+                <div class="card">
+                    <div class="card-value success" id="stat-strong">-</div>
+                    <div class="card-label">Strong</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="stat-applied">-</div>
+                    <div class="card-label">Applied</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="stat-interview">-</div>
+                    <div class="card-label">Interview</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="stat-offer">-</div>
+                    <div class="card-label">Offer</div>
+                </div>
+                <div class="card">
+                    <div class="card-value muted" id="stat-avgscore">-</div>
+                    <div class="card-label">Avg Score</div>
+                </div>
+            </div>
+
+            <!-- Extended status -->
+            <div class="card-row info-row" id="ext-status"></div>
+
+            <!-- Quick actions -->
+            <div class="section-header"><h2>Quick Actions</h2></div>
+            <div class="action-row" id="quick-actions">
+                <button class="btn btn-primary" data-action="run-autopilot">
+                    Run Daily
+                </button>
+                <button class="btn btn-secondary" data-action="search-smoke">
+                    Smoke Search
+                </button>
+                <button class="btn btn-secondary" data-action="export-all">
+                    Export All
+                </button>
+                <button
+                    class="btn btn-secondary"
+                    data-action="quality-cluster-job"
+                >
+                    Quality Cluster
+                </button>
+                <button class="btn btn-secondary" data-action="calibrate-job">
+                    Calibrate
+                </button>
+                <a href="/queue" class="btn btn-secondary">Review Queue</a>
+            </div>
+
+            <!-- Follow-up panel -->
+            <div class="section-header"><h2>Follow-ups</h2></div>
+            <div id="follow-ups-panel">
+                <div class="log-entry muted">No pending follow-ups</div>
+            </div>
+
+            <!-- Reports panel -->
+            <div class="section-header"><h2>Reports</h2></div>
+            <div id="reports-panel">
+                <div class="log-entry muted">No reports found</div>
+            </div>
+
+            <!-- Recent jobs -->
+            <div class="section-header"><h2>Recent Jobs</h2></div>
+            <div class="recent-jobs" id="recent-jobs">
+                <div class="log-entry muted">No jobs yet</div>
+            </div>
+
+            <!-- Log -->
+            <div class="section-header"><h2>Activity Log</h2></div>
+            <div class="log-panel" id="log-panel">
+                <div class="log-entry muted" id="log-default">Waiting...</div>
+            </div>
+
+            <div class="toast-container" id="toast-container"></div>
+        </section>
+    </main>
+</div>
+{% endblock %}

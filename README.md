@@ -309,6 +309,96 @@ python -m src.main search --dry-run
 
 ### Рекомендации по безопасному использованию
 
+## Local UI
+
+CareerSignal HH включает локальный веб-интерфейс для работы через браузер.
+
+### Запуск
+
+```powershell
+python -m src.main ui --open-browser
+```
+
+Опции:
+
+```
+--host HOST         Bind address (default: 127.0.0.1)
+--port PORT         Bind port (default: 8765)
+--open-browser      Open browser automatically
+--allow-lan         Allow binding to non-localhost addresses
+--debug             Enable debug logging
+```
+
+### Безопасность
+
+- UI слушает только 127.0.0.1 (localhost) по умолчанию.
+- Для привязки к другим адресам требуется флаг `--allow-lan`.
+- Токены **никогда не показываются** в UI.
+- UI **не отправляет отклики** — все операции read-only или запускают
+  существующие CLI-команды.
+- CLI остаётся полностью доступным и независимым от UI.
+
+### Первая страница
+
+После открытия `http://127.0.0.1:8765` отображается Dashboard со:
+
+- статусом базы данных и health check;
+- счётчиками: всего вакансий, новых за 24h, pending queue, strong matches;
+- статусами applied/interview/offer;
+- последним search run, backup, export;
+- кнопками действий: Health Check, Daily Autopilot, Review Queue,
+  Export Cockpit, Generate Analytics, Settings.
+
+### Технический стек
+
+- Backend: FastAPI + Uvicorn
+- Frontend: Server-rendered HTML (Jinja2) + vanilla JS + CSS
+- Никаких CDN, React/Vite/Tauri — всё локально
+
+### Job Manager и долгие операции
+
+Долгие операции (autopilot, search, export, quality, calibration, apply-pack)
+запускаются как фоновые jobs и не блокируют UI. На dashboard отображается
+Active Job card с progress bar (0-100%), статусом и сообщением.
+UI опрашивает статус каждые 2 секунды. Кнопка Cancel позволяет прервать
+задачу. Только одна тяжёлая задача может выполняться одновременно.
+Deep mode недоступен из UI для безопасности.
+
+#### Review Queue UI
+
+Страница  — основной интерфейс для ежедневной работы с вакансиями.
+
+### Возможности
+
+- Фильтры: min score, decision, review status, preset, remote/salary/risk/new/dedupe.
+- Карточки вакансий с score circle, decision badge, keywords preview, risk flags.
+- Кнопки статуса: Interesting, Maybe, Reject, Archive — одним кликом.
+- Mark Applied — ручная отметка отклика с датой.
+- Apply Pack — генерация cover letter для конкретной вакансии.
+- Detail drawer — полное описание, keywords, заметки, действия.
+- Inline note editor с сохранением.
+- Bulk actions: Archive auto_hide, Reject score<35, Interesting 85+ — с confirmation modal.
+- Защита applied/interview/offer от случайной перезаписи (force checkbox).
+
+### Безопасность
+
+- Нет кнопки «автоматический отклик».
+- Mark Applied только фиксирует факт ручного отклика.
+- Bulk действия требуют confirm=true и показывают confirmation modal.
+- Токены не показываются в ответах API.
+
+### Job endpoints
+
+POST /api/jobs/autopilot-daily   - autopilot
+POST /api/jobs/search-smoke      - smoke search
+POST /api/jobs/export-all        - полный экспорт
+POST /api/jobs/quality-cluster   - анализ качества
+POST /api/jobs/calibrate-suggest - calibration
+POST /api/jobs/apply-pack-top    - apply packs
+GET  /api/jobs                   - список jobs
+GET  /api/jobs/{id}              - статус job
+POST /api/jobs/{id}/cancel       - отмена
+
 ## Universal Search Presets
 
 CareerSignal HH поддерживает универсальные поисковые пресеты через

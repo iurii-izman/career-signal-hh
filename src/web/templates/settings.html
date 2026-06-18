@@ -1,0 +1,185 @@
+{% extends "base.html" %} {% block content %}
+<div class="presets-page">
+  <div class="page-topbar">
+    <a href="/" class="btn btn-sm">&larr; Dashboard</a>
+    <h2>Settings</h2>
+  </div>
+
+  <div id="settings-loading">Loading...</div>
+  <div id="settings-content" style="display:none">
+
+    <!-- Section: Environment -->
+    <div class="settings-section">
+      <h3>Environment (.env)</h3>
+      <div class="settings-grid" id="env-fields"></div>
+      <div style="margin-top:12px">
+        <button class="btn btn-primary" id="env-save">Save Environment</button>
+        <span id="env-msg" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
+      </div>
+    </div>
+
+    <!-- Section: Search Safety -->
+    <div class="settings-section">
+      <h3>Search Safety (read-only)</h3>
+      <div class="settings-grid" id="search-modes"></div>
+    </div>
+
+    <!-- Section: Candidate Profile -->
+    <div class="settings-section">
+      <h3>Candidate Profile</h3>
+      <div id="candidate-fields"></div>
+      <div style="margin-top:12px">
+        <button class="btn btn-primary" id="candidate-save">Save Candidate Profile</button>
+        <span id="candidate-msg" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
+      </div>
+    </div>
+
+    <!-- Section: Health -->
+    <div class="settings-section">
+      <h3>Health</h3>
+      <div id="health-snapshot"></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn btn-primary" id="btn-run-health">Run Health Check</button>
+        <button class="btn btn-secondary" id="btn-test-auth">Test Auth</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast-container" id="toast-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function toast(msg, ok) {
+    var c = document.getElementById('toast-container');
+    var t = document.createElement('div');
+    t.className = 'toast ' + (ok ? 'ok' : 'error');
+    t.innerHTML = '<span>'+esc(msg)+'</span><button class="toast-close" onclick="this.parentElement.remove()">&times;</button>';
+    c.appendChild(t);
+    setTimeout(function(){ if(t.parentElement) t.remove(); }, 4000);
+  }
+  async function apiGet(url) { return (await fetch(url)).json(); }
+  async function apiPost(url, body) {
+    return (await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{}) })).json();
+  }
+
+  var envData = {};
+  var candidateData = {};
+
+  async function load() {
+    var r = await apiGet('/api/settings');
+    if (!r || !r.ok) { document.getElementById('settings-loading').textContent = 'Failed to load settings'; return; }
+    document.getElementById('settings-loading').style.display = 'none';
+    document.getElementById('settings-content').style.display = 'block';
+
+    envData = r.data.env || {};
+    candidateData = r.data.candidate || {};
+
+    // Env fields
+    var envKeys = ['HH_AUTH_MODE','HH_APP_ACCESS_TOKEN','HH_USER_AGENT','DB_PATH','HH_DELAY_MIN_SECONDS','HH_DELAY_MAX_SECONDS','HH_COOLDOWN_ON_429_SECONDS','HH_STOP_ON_429','HH_DETAIL_REFRESH_DAYS'];
+    var envLabels = {HH_APP_ACCESS_TOKEN:'Token (masked, fill to replace)', HH_AUTH_MODE:'Auth Mode', HH_USER_AGENT:'User Agent', DB_PATH:'DB Path', HH_DELAY_MIN_SECONDS:'Delay Min (s)', HH_DELAY_MAX_SECONDS:'Delay Max (s)', HH_COOLDOWN_ON_429_SECONDS:'Cooldown 429 (s)', HH_STOP_ON_429:'Stop on 429', HH_DETAIL_REFRESH_DAYS:'Detail Refresh Days'};
+    var html = '';
+    envKeys.forEach(function(k) {
+      var isToken = k === 'HH_APP_ACCESS_TOKEN';
+      var val = envData[k] || '';
+      var readonly = (k === 'HH_APP_ACCESS_TOKEN') ? '' : '';
+      html += '<div class="settings-card"><label>' + (envLabels[k]||k) + '</label>';
+      if (isToken) {
+        html += '<input id="env-'+k+'" placeholder="Leave blank to keep current" style="width:100%"><div style="font-size:11px;color:var(--muted);margin-top:4px">Current: ' + esc(val) + '</div>';
+      } else {
+        html += '<input id="env-'+k+'" value="' + esc(val) + '" style="width:100%">';
+      }
+      html += '</div>';
+    });
+    document.getElementById('env-fields').innerHTML = html;
+
+    // Search modes
+    var modes = r.data.search_modes || {};
+    var mhtml = '';
+    Object.keys(modes).forEach(function(m) {
+      var v = modes[m];
+      mhtml += '<div class="settings-card"><strong>' + esc(m) + '</strong><ul><li>Max pages: ' + v.max_pages + '</li><li>Per page: ' + v.per_page + '</li><li>Budget: ' + v.max_requests_per_run + ' req / ' + v.max_detail_fetches_per_run + ' detail</li></ul></div>';
+    });
+    document.getElementById('search-modes').innerHTML = mhtml;
+
+    // Candidate
+    var cand = candidateData.candidate || {};
+    var profiles = cand.profiles || {};
+    var defProf = profiles.default || {};
+    var ch = '<div class="settings-card"><label>Name RU</label><input id="cand-name-ru" value="'+esc(cand.name_ru||'')+'" style="width:100%"></div>' +
+      '<div class="settings-card"><label>Name EN</label><input id="cand-name-en" value="'+esc(cand.name_en||'')+'" style="width:100%"></div>' +
+      '<div class="settings-card"><label>Location</label><input id="cand-location" value="'+esc(cand.location||'')+'" style="width:100%"></div>' +
+      '<div class="settings-card"><label>Availability</label><input id="cand-availability" value="'+esc(cand.availability||'')+'" style="width:100%"></div>' +
+      '<div class="settings-card"><label>GitHub</label><input id="cand-github" value="'+esc((cand.links||{}).github||'')+'" style="width:100%"></div>' +
+      '<div class="settings-card"><label>LinkedIn</label><input id="cand-linkedin" value="'+esc((cand.links||{}).linkedin||'')+'" style="width:100%"></div>' +
+      '<div class="settings-card"><label>Summary RU</label><textarea id="cand-summary-ru" style="width:100%;min-height:80px">'+esc(defProf.summary_ru||'')+'</textarea></div>' +
+      '<div class="settings-card"><label>Summary EN</label><textarea id="cand-summary-en" style="width:100%;min-height:80px">'+esc(defProf.summary_en||'')+'</textarea></div>';
+    document.getElementById('candidate-fields').innerHTML = ch;
+
+    // Health
+    var h = r.data.health || {};
+    document.getElementById('health-snapshot').innerHTML = '<div style="font-size:12px;color:var(--muted)">DB: ' + (h.db_exists ? 'exists (' + (h.db_size_bytes/1024).toFixed(0) + ' KB)' : 'missing') + ' | Presets: ' + (h.presets_exists ? 'exists' : 'missing') + ' | Backup: ' + (h.latest_backup_hours != null ? h.latest_backup_hours + 'h ago' : 'none') + '</div>';
+  }
+
+  // Save env
+  document.getElementById('env-save').addEventListener('click', function() {
+    var updates = {};
+    ['HH_AUTH_MODE','HH_USER_AGENT','DB_PATH','HH_DELAY_MIN_SECONDS','HH_DELAY_MAX_SECONDS','HH_COOLDOWN_ON_429_SECONDS','HH_STOP_ON_429','HH_DETAIL_REFRESH_DAYS'].forEach(function(k) {
+      var el = document.getElementById('env-'+k);
+      if (el) updates[k] = el.value;
+    });
+    var tokenEl = document.getElementById('env-HH_APP_ACCESS_TOKEN');
+    if (tokenEl && tokenEl.value.trim()) updates['HH_APP_ACCESS_TOKEN'] = tokenEl.value.trim();
+    apiPost('/api/settings/env', updates).then(function(r) {
+      var el = document.getElementById('env-msg');
+      el.textContent = r.message;
+      el.style.color = r.ok ? 'var(--success)' : 'var(--danger)';
+      if (r.ok) toast('Settings saved. Backup created. Restart UI to apply.', true);
+    });
+  });
+
+  // Save candidate
+  document.getElementById('candidate-save').addEventListener('click', function() {
+    var data = {
+      candidate: {
+        name_ru: document.getElementById('cand-name-ru').value,
+        name_en: document.getElementById('cand-name-en').value,
+        location: document.getElementById('cand-location').value,
+        availability: document.getElementById('cand-availability').value,
+        links: {
+          github: document.getElementById('cand-github').value,
+          linkedin: document.getElementById('cand-linkedin').value
+        },
+        profiles: {
+          default: {
+            summary_ru: document.getElementById('cand-summary-ru').value,
+            summary_en: document.getElementById('cand-summary-en').value
+          }
+        }
+      }
+    };
+    apiPost('/api/settings/candidate', data).then(function(r) {
+      var el = document.getElementById('candidate-msg');
+      el.textContent = r.message;
+      el.style.color = r.ok ? 'var(--success)' : 'var(--danger)';
+    });
+  });
+
+  document.getElementById('btn-test-auth').addEventListener('click', function() {
+    apiPost('/api/settings/test-auth').then(function(r) {
+      var msg = r.ok ? 'Mode: ' + (r.data&&r.data.auth_mode) + ', Token: ' + (r.data&&r.data.token_present?'present':'missing') + ', API: ' + (r.data&&r.data.get_me) : r.message;
+      toast(msg, r.ok);
+    });
+  });
+
+  document.getElementById('btn-run-health').addEventListener('click', function() {
+    apiPost('/api/settings/health').then(function(r) {
+      toast(r.message || 'Health check done', r.ok);
+    });
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

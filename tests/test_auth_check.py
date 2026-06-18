@@ -3,7 +3,6 @@ from argparse import Namespace
 from rich.console import Console
 
 from src.commands import auth
-from src.hh_client import HHClient
 
 
 class FakeClient:

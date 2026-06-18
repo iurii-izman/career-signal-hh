@@ -6,11 +6,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 import yaml
 
 from src.commands import calibrate
-from src.models import ScoreDetails, ScoreResult, Vacancy
+from src.models import Vacancy
 from src.storage import Storage
 
 
@@ -244,14 +243,14 @@ def test_apply_add_exclude(tmp_path: Path, monkeypatch) -> None:
 
     from argparse import Namespace
 
-    result = cal_mod.command_calibrate_apply(
+    cal_mod.command_calibrate_apply(
         Namespace(suggestion_id="test001", yes=True, preset=None)
     )
 
     # The path override might not work perfectly; check we didn't crash
     # and that the suggestion marked as applied
     all_s = cal_mod._load_suggestions()
-    applied = [s for s in all_s if s["id"] == "test001" and s.get("status") == "applied"]
+    [s for s in all_s if s["id"] == "test001" and s.get("status") == "applied"]
     # May not be applied if preset file path is wrong, but function shouldn't crash
     # Cleanup
     Path("data/calibration_suggestions.json").unlink(missing_ok=True)

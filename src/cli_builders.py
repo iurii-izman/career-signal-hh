@@ -33,6 +33,7 @@ from .commands import (
     search,
     search_lab,
     stats,
+    ui,
     version_cmd,
     wizard,
 )
@@ -317,6 +318,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_import_parser(sub)
     build_report_parser(sub)
     build_llm_parser(sub)
+    build_ui_parser(sub)
 
     # Simple parsers
     sub.add_parser("top").set_defaults(func=stats.command_top)
@@ -329,6 +331,23 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     sp.add_argument("--db", default=None)
     sp.set_defaults(func=sample.command_sample_export)
     sub.add_parser("version").set_defaults(func=version_cmd.command_version)
+
+
+def build_ui_parser(sub: argparse._SubParsersAction) -> None:
+    """Register 'ui' subcommand for local web server and helpers."""
+    p = sub.add_parser("ui", help="Launch local web UI")
+    p.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
+    p.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+    p.add_argument("--open-browser", action="store_true", help="Open browser automatically")
+    p.add_argument(
+        "--allow-lan",
+        action="store_true",
+        help="Allow binding to non-localhost addresses",
+    )
+    p.add_argument("--debug", action="store_true", help="Enable debug logging")
+    p.add_argument("--shortcut", action="store_true", help="Print desktop shortcut instructions")
+    p.add_argument("--app-mode", action="store_true", help="Print browser app-mode commands")
+    p.set_defaults(func=ui.command_ui)
 
 
 def build_calibrate_parser(sub: argparse._SubParsersAction) -> None:

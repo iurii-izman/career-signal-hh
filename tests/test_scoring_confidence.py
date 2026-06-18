@@ -10,7 +10,6 @@ from src.matching import (
     match_in_fields,
     phrase_match,
     safe_keyword_match,
-    word_boundary_match,
 )
 from tests.helpers import (
     load_fixture_yaml,

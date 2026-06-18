@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="vacancy-page" id="vacancy-page" data-vid="{{ vacancy_id }}">
+  <!-- Top bar -->
+  <div class="vacancy-topbar">
+    <a href="/queue" class="btn btn-sm">&larr; Back to Queue</a>
+    <span class="vacancy-id">ID: {{ vacancy_id }}</span>
+  </div>
+
+  <!-- Loading -->
+  <div id="v-loading" class="vacancy-loading">Loading vacancy data...</div>
+
+  <!-- Content (hidden until loaded) -->
+  <div id="v-content" style="display:none">
+    <!-- Header -->
+    <div class="v-header">
+      <div class="v-header-left">
+        <div class="v-score-circle" id="v-score">-</div>
+      </div>
+      <div class="v-header-main">
+        <h1 class="v-title" id="v-title">-</h1>
+        <div class="v-company" id="v-company">-</div>
+        <div class="v-header-badges" id="v-badges"></div>
+      </div>
+      <div class="v-header-right">
+        <a class="btn btn-sm" id="v-hh-link" href="#" target="_blank" rel="noopener">Open on HH.ru</a>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="v-tabs" id="v-tabs">
+      <button class="v-tab active" data-tab="overview">Overview</button>
+      <button class="v-tab" data-tab="score">Score Explain</button>
+      <button class="v-tab" data-tab="description">Description</button>
+      <button class="v-tab" data-tab="review">Review</button>
+      <button class="v-tab" data-tab="apply-pack">Apply Pack</button>
+      <button class="v-tab" data-tab="similar">Similar</button>
+    </div>
+
+    <!-- Tab: Overview -->
+    <div class="v-tab-content active" id="tab-overview">
+      <div class="v-overview-grid" id="v-overview-grid"></div>
+    </div>
+
+    <!-- Tab: Score Explain -->
+    <div class="v-tab-content" id="tab-score">
+      <div id="v-score-content">Loading...</div>
+    </div>
+
+    <!-- Tab: Description -->
+    <div class="v-tab-content" id="tab-description">
+      <div class="v-desc" id="v-desc-text"></div>
+    </div>
+
+    <!-- Tab: Review -->
+    <div class="v-tab-content" id="tab-review">
+      <div id="v-review-content">
+        <div class="v-review-status" id="v-review-status"></div>
+        <div class="v-review-actions" id="v-review-actions"></div>
+        <div class="v-review-note">
+          <h4>Notes</h4>
+          <textarea id="v-note-text" placeholder="Add a note..."></textarea>
+          <div class="v-note-actions">
+            <button class="btn btn-sm" id="v-note-save">Save Note</button>
+          </div>
+        </div>
+        <div class="v-review-draft" id="v-review-draft" style="display:none">
+          <h4>Cover Letter Draft</h4>
+          <pre id="v-draft-text"></pre>
+          <button class="btn btn-sm btn-danger" id="v-draft-clear">Clear Draft</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Apply Pack -->
+    <div class="v-tab-content" id="tab-apply-pack">
+      <div class="v-ap-controls">
+        <div class="filter-group">
+          <label>Language</label>
+          <select id="ap-lang">
+            <option value="ru">Russian (ru)</option>
+            <option value="en">English (en)</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Style</label>
+          <select id="ap-style">
+            <option value="short">Short</option>
+            <option value="medium" selected>Medium</option>
+            <option value="detailed">Detailed</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="check-label">
+            <input type="checkbox" id="ap-save-draft" checked> Save draft to review
+          </label>
+        </div>
+        <button class="btn btn-primary" id="ap-generate">Generate Apply Pack</button>
+      </div>
+      <div id="ap-result" style="margin-top:12px"></div>
+    </div>
+
+    <!-- Tab: Similar -->
+    <div class="v-tab-content" id="tab-similar">
+      <div id="v-similar-content">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  var vid = document.getElementById('vacancy-page').getAttribute('data-vid');
+  var data = null;
+
+  // ── Tab switching ──────────────────────────────────────────────────
+  document.getElementById('v-tabs').addEventListener('click', function(e) {
+    var tab = e.target.closest('.v-tab');
+    if (!tab) return;
+    document.querySelectorAll('.v-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.v-tab-content').forEach(function(c) { c.classList.remove('active'); });
+    tab.classList.add('active');
+    var target = document.getElementById('tab-' + tab.getAttribute('data-tab'));
+    if (target) target.classList.add('active');
+    // Load score / similar on demand
+    var tabName = tab.getAttribute('data-tab');
+    if (tabName === 'score' && !document.getElementById('v-score-loaded')) loadScoreExplain();
+    if (tabName === 'similar' && !document.getElementById('v-similar-loaded')) loadSimilar();
+  });
+
+  // ── Load vacancy ───────────────────────────────────────────────────
+  async function loadVacancy() {
+    try {
+      var r = await fetch('/api/vacancies/' + vid + '/full').then(function(r) { return r.json(); });
+      if (!r || !r.ok) { document.getElementById('v-loading').textContent = 'Vacancy not found'; return; }
+      data = r.data;
+      document.getElementById('v-loading').style.display = 'none';
+      document.getElementById('v-content').style.display = 'block';
+      renderOverview();
+      renderReview();
+    } catch(e) {
+      document.getElementById('v-loading').textContent = 'Error: ' + e.message;
+    }
+  }
+
+  function scoreClass(s) { if (s >= 85) return 'high'; if (s >= 50) return 'mid'; if (s > 0) return 'low'; return 'none'; }
+  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function renderOverview() {
+    var score = data.total_score || 0;
+    var sc = document.getElementById('v-score');
+    sc.textContent = score;
+    sc.className = 'v-score-circle ' + scoreClass(score);
+
+    document.getElementById('v-title').textContent = data.name || '-';
+    document.getElementById('v-company').textContent = (data.employer_name || '') + ' — ' + (data.area_name || '');
+
+    var badges = '';
+    if (data.decision) badges += '<span class=\"badge badge-' + esc(data.decision) + '\">' + esc(data.decision) + '</span> ';
+    if (data.preset_name || data.best_profile) badges += '<span class=\"badge badge-preset\">' + esc(data.preset_name || data.best_profile) + '</span> ';
+    if (data.review_status) badges += '<span class=\"badge badge-preset\">' + esc(data.review_status) + '</span> ';
+    if (data._cluster) badges += '<span class=\"badge badge-preset\">Cluster: ' + data._cluster.size + ' dupes</span> ';
+    document.getElementById('v-badges').innerHTML = badges;
+    document.getElementById('v-hh-link').href = data.alternate_url || '#';
+
+    // Overview grid
+    var grid = document.getElementById('v-overview-grid');
+    var items = [
+      ['Salary', (data.salary_from || data.salary_to) ? (data.salary_from||'?') + ' – ' + (data.salary_to||'?') + (data.salary_currency ? ' ' + data.salary_currency : '') : '-'],
+      ['Schedule', data.schedule_name || '-'],
+      ['Experience', data.experience_name || '-'],
+      ['Area', data.area_name || '-'],
+      ['Published', (data.published_at || '').substring(0, 10)],
+      ['First seen', (data.first_seen_at || '').substring(0, 10)],
+      ['Source preset', data.source_profile || data.preset_name || '-'],
+    ];
+    if (data._cluster) {
+      items.push(['Cluster', data._cluster.reason + ' (' + data._cluster.size + ' dupes, similarity: ' + (data._cluster.similarity || '?') + ')']);
+    }
+    if (data._work_flags && data._work_flags.length) {
+      items.push(['Work format', data._work_flags.join(', ')]);
+    }
+    if (data._risk_flags && data._risk_flags.length) {
+      items.push(['Risk flags', '<span class=\"v-risk\">' + esc(data._risk_flags.join(', ')) + '</span>']);
+    }
+    if (data._matched_kw && data._matched_kw.length) {
+      items.push(['Matched keywords', data._matched_kw.slice(0, 10).map(function(k) { return '<span class=\"kw-tag\">' + esc(typeof k === 'string' ? k : k.keyword || '') + '</span>'; }).join(' ')]);
+    }
+    grid.innerHTML = items.map(function(row) { return '<div class=\"v-ov-item\"><span class=\"v-ov-label\">' + row[0] + '</span><span class=\"v-ov-value\">' + row[1] + '</span></div>'; }).join('');
+  }
+
+  // ── Score Explain ──────────────────────────────────────────────────
+  async function loadScoreExplain() {
+    try {
+      var r = await fetch('/api/vacancies/' + vid + '/score-explain').then(function(r) { return r.json(); });
+      if (!r || !r.ok) return;
+      var s = r.data;
+      var html = '';
+      if (!s.has_score) { html = '<p style=\"color:var(--muted)\">No score details available. Run search with presets first.</p>'; }
+      else {
+        html += '<div class=\"v-score-summary\"><div class=\"v-score-big\">' + s.total_score + '</div><div>Confidence: <strong>' + s.confidence_score + '%</strong> | Noise: <strong>' + s.noise_score + '%</strong> | Decision: <strong>' + esc(s.decision) + '</strong> | Preset: <strong>' + esc(s.preset_name) + '</strong></div></div>';
+        // Category scores
+        if (s.category_scores) {
+          html += '<div class=\"v-cat-scores\">';
+          Object.keys(s.category_scores).forEach(function(cat) {
+            var val = s.category_scores[cat];
+            var pct = Math.min(100, Math.max(0, Math.abs(val)));
+            var barCls = val >= 0 ? 'v-bar-pos' : 'v-bar-neg';
+            html += '<div class=\"v-cat-row\"><span class=\"v-cat-name\">' + esc(cat) + '</span><span class=\"v-cat-val\">' + (val>=0?'+':'') + val + '</span><div class=\"v-cat-bar\"><div class=\"v-cat-fill ' + barCls + '\" style=\"width:' + pct + '%\"></div></div></div>';
+          });
+          html += '</div>';
+        }
+        // Explanation
+        if (s.explanation) {
+          html += '<div class=\"v-explain\">';
+          if (s.explanation.total_formula) html += '<div class=\"v-explain-item\"><strong>Formula:</strong> ' + esc(s.explanation.total_formula) + '</div>';
+          if (s.explanation.decision_logic) html += '<div class=\"v-explain-item\"><strong>Decision:</strong> ' + esc(s.explanation.decision_logic) + '</div>';
+          html += '</div>';
+        }
+        // Matched keywords
+        if (s.matched_keywords && s.matched_keywords.length) {
+          html += '<h4 style=\"margin-top:16px\">Matched Keywords (' + s.matched_keywords.length + ')</h4><table class=\"v-kw-table\"><tr><th>Keyword</th><th>Field</th><th>Weight</th></tr>';
+          s.matched_keywords.forEach(function(k) { html += '<tr><td class=\"kw-match\">' + esc(k.keyword) + '</td><td>' + esc(k.field) + '</td><td>' + k.weight + '</td></tr>'; });
+          html += '</table>';
+        }
+        // Excluded keywords
+        if (s.excluded_keywords && s.excluded_keywords.length) {
+          html += '<h4 style=\"margin-top:16px\">Excluded Keywords (' + s.excluded_keywords.length + ')</h4><table class=\"v-kw-table\"><tr><th>Keyword</th><th>Field</th><th>Weight</th></tr>';
+          s.excluded_keywords.forEach(function(k) { html += '<tr><td class=\"kw-exclude\">' + esc(k.keyword) + '</td><td>' + esc(k.field) + '</td><td>' + k.weight + '</td></tr>'; });
+          html += '</table>';
+        }
+        // Flags
+        if (s.risk_flags && s.risk_flags.length) html += '<div class=\"v-flags\"><strong>Risk:</strong> ' + esc(s.risk_flags.join(', ')) + '</div>';
+        if (s.quality_flags && s.quality_flags.length) html += '<div class=\"v-flags\"><strong>Quality:</strong> ' + esc(s.quality_flags.join(', ')) + '</div>';
+      }
+      document.getElementById('v-score-content').innerHTML = html;
+      document.getElementById('v-score-content').setAttribute('id', 'v-score-loaded');
+    } catch(e) { /* ignore */ }
+  }
+
+  // ── Description ────────────────────────────────────────────────────
+  function renderDescription() {
+    var text = data.description_text || data.description_html || '';
+    if (!text) { document.getElementById('v-desc-text').innerHTML = '<p style=\"color:var(--muted)\">No description available.</p>'; return; }
+    // Strip HTML tags if description_text was extracted
+    var clean = text.replace(/<[^>]*>/g, '');
+    // Highlight matched keywords
+    var kwList = [];
+    try {
+      if (data._matched_kw && data._matched_kw.length) {
+        kwList = data._matched_kw.map(function(k) { return (typeof k === 'string' ? k : k.keyword || '').toLowerCase(); }).filter(function(k) { return k.length > 2; });
+      }
+    } catch(e) {}
+    var html = esc(clean.substring(0, 5000));
+    if (kwList.length) {
+      kwList.forEach(function(kw) {
+        var re = new RegExp('(' + kw.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + ')', 'gi');
+        html = html.replace(re, '<mark class=\"kw-hl\">$1</mark>');
+      });
+    }
+    document.getElementById('v-desc-text').innerHTML = '<div class=\"v-desc-line\">' + html.replace(/\\n/g, '</div><div class=\"v-desc-line\">') + '</div>';
+  }
+
+  // ── Review ─────────────────────────────────────────────────────────
+  function renderReview() {
+    var status = data.review_status || 'new';
+    var statusHtml = '<span>Status: <strong>' + esc(status) + '</strong></span>';
+    document.getElementById('v-review-status').innerHTML = statusHtml;
+
+    var actions = '<button class=\"btn btn-sm\" data-va=\"interesting\">Interesting</button> ' +
+      '<button class=\"btn btn-sm\" data-va=\"maybe\">Maybe</button> ' +
+      '<button class=\"btn btn-sm\" data-va=\"rejected\">Reject</button> ' +
+      '<button class=\"btn btn-sm\" data-va=\"archived\">Archive</button> ' +
+      '<button class=\"btn btn-sm\" data-va=\"applied\">Mark Applied</button>';
+    document.getElementById('v-review-actions').innerHTML = actions;
+
+    document.getElementById('v-note-text').value = data.user_notes || '';
+
+    if (data._draft) {
+      document.getElementById('v-review-draft').style.display = 'block';
+      document.getElementById('v-draft-text').textContent = data._draft;
+    }
+    // Render description in the description tab
+    renderDescription();
+  }
+
+  // Review action delegation
+  document.getElementById('v-review-actions').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-va]');
+    if (!btn) return;
+    var action = btn.getAttribute('data-va');
+    if (action === 'interesting' || action === 'maybe' || action === 'rejected' || action === 'archived') {
+      fetch('/api/vacancies/' + vid + '/status', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:action}) })
+        .then(function(r){ return r.json(); }).then(function(r) { toast(r.message, r.ok); if (r.ok) location.reload(); });
+    } else if (action === 'applied') {
+      fetch('/api/vacancies/' + vid + '/applied', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:'today'}) })
+        .then(function(r){ return r.json(); }).then(function(r) { toast(r.message, r.ok); if (r.ok) location.reload(); });
+    }
+  });
+
+  document.getElementById('v-note-save').addEventListener('click', function() {
+    var note = document.getElementById('v-note-text').value;
+    fetch('/api/vacancies/' + vid + '/note', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({note:note}) })
+      .then(function(r){ return r.json(); }).then(function(r) { toast(r.message, r.ok); });
+  });
+
+  document.getElementById('v-draft-clear').addEventListener('click', function() {
+    if (!confirm('Clear cover letter draft?')) return;
+    fetch('/api/vacancies/' + vid + '/note', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({note:'[DRAFT_CLEARED]'}) })
+      .then(function(r){ return r.json(); }).then(function(r) { toast('Draft cleared', true); location.reload(); });
+  });
+
+  // ── Apply Pack ─────────────────────────────────────────────────────
+  document.getElementById('ap-generate').addEventListener('click', function() {
+    var lang = document.getElementById('ap-lang').value;
+    var style = document.getElementById('ap-style').value;
+    var save = document.getElementById('ap-save-draft').checked;
+    document.getElementById('ap-result').innerHTML = '<span class=\"running-indicator\"><span class=\"spinner\"></span>Generating...</span>';
+    fetch('/api/vacancies/' + vid + '/apply-pack-preview?lang=' + lang + '&style=' + style)
+      .then(function(r){ return r.json(); }).then(function(r) {
+        var html = r.ok ? '<div class=\"log-entry success\">' + esc(r.message) + '</div>' : '<div class=\"log-entry error\">' + esc(r.message) + '</div>';
+        if (save) {
+          fetch('/api/vacancies/' + vid + '/apply-pack', { method:'POST' }).then(function(){});
+        }
+        document.getElementById('ap-result').innerHTML = html;
+        setTimeout(function() { location.reload(); }, 2000);
+      });
+  });
+
+  // ── Similar ────────────────────────────────────────────────────────
+  async function loadSimilar() {
+    try {
+      var r = await fetch('/api/vacancies/' + vid + '/similar').then(function(r){ return r.json(); });
+      if (!r || !r.ok) return;
+      var d = r.data;
+      var html = '';
+      function renderGroup(title, items) {
+        if (!items || !items.length) return '';
+        var h = '<h4 style=\"margin-top:16px\">' + title + ' (' + items.length + ')</h4><div class=\"v-similar-list\">';
+        items.forEach(function(v) {
+          h += '<div class=\"v-similar-item\">' +
+            '<a href=\"/vacancy/' + v.id + '\" class=\"v-similar-link\">' + esc(v.name || '') + '</a>' +
+            '<span class=\"v-similar-meta\">' + esc(v.employer_name || '') + ' — Score: ' + (v.total_score || 0) + '</span>' +
+            '</div>';
+        });
+        return h + '</div>';
+      }
+      html += renderGroup('Same Cluster', d.cluster);
+      html += renderGroup('Same Employer', d.same_employer);
+      html += renderGroup('Similar Title', d.similar_title);
+      if (!html) html = '<p style=\"color:var(--muted)\">No similar vacancies found.</p>';
+      document.getElementById('v-similar-content').innerHTML = html;
+      document.getElementById('v-similar-content').setAttribute('id', 'v-similar-loaded');
+    } catch(e) {}
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────
+  function toast(msg, ok) {
+    var c = document.getElementById('toast-container');
+    var t = document.createElement('div');
+    t.className = 'toast ' + (ok ? 'ok' : 'error');
+    t.innerHTML = '<span>' + esc(msg) + '</span><button class=\"toast-close\" onclick=\"this.parentElement.remove()\">&times;</button>';
+    c.appendChild(t);
+    setTimeout(function(){ if (t.parentElement) t.remove(); }, 4000);
+  }
+
+  // Init
+  loadVacancy();
+})();
+</script>
+{% endblock %}

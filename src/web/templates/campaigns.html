@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="presets-page">
+  <div class="page-topbar">
+    <a href="/" class="btn btn-sm">&larr; Dashboard</a>
+    <h2>Campaigns</h2>
+    <button class="btn btn-primary btn-sm" id="btn-new-campaign">+ New Campaign</button>
+  </div>
+
+  <div class="page-tabs">
+    <a href="/presets" class="page-tab">Presets</a>
+    <a href="/campaigns" class="page-tab active">Campaigns</a>
+  </div>
+
+  <div id="campaigns-list">Loading...</div>
+
+  <!-- Edit drawer -->
+  <div class="queue-drawer-backdrop" id="edit-backdrop" style="display:none"></div>
+  <div class="queue-drawer" id="edit-drawer" style="display:none">
+    <div class="drawer-header">
+      <h3 id="edit-title">Edit Campaign</h3>
+      <button class="queue-close" id="edit-close">&times;</button>
+    </div>
+    <div class="drawer-body" id="edit-body"></div>
+  </div>
+</div>
+<div class="toast-container" id="toast-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function toast(msg, ok) {
+    var c = document.getElementById('toast-container');
+    var t = document.createElement('div');
+    t.className = 'toast ' + (ok ? 'ok' : 'error');
+    t.innerHTML = '<span>' + esc(msg) + '</span><button class=\"toast-close\" onclick=\"this.parentElement.remove()\">&times;</button>';
+    c.appendChild(t);
+    setTimeout(function(){ if (t.parentElement) t.remove(); }, 4000);
+  }
+  async function apiGet(url) { return (await fetch(url)).json(); }
+  async function apiPost(url, body) {
+    return (await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {}) })).json();
+  }
+
+  async function loadList() {
+    var r = await apiGet('/api/campaigns');
+    if (!r || !r.ok) { document.getElementById('campaigns-list').textContent = 'Failed to load'; return; }
+    renderList(r.data);
+  }
+
+  function renderList(campaigns) {
+    var html = '';
+    campaigns.forEach(function(c) {
+      html += '<div class=\"preset-card ' + (c.enabled ? '' : 'disabled') + '\">' +
+        '<div class=\"preset-card-header\">' +
+          '<span class=\"preset-name\">' + esc(c._name) + '</span>' +
+          '<span class=\"badge ' + (c.enabled ? 'badge-strong_match' : 'badge-auto_hide') + '\">' + (c.enabled ? 'enabled' : 'disabled') + '</span>' +
+        '</div>' +
+        '<div class=\"preset-card-meta\">' +
+          '<span>Presets: ' + (c.presets||[]).join(', ') + '</span>' +
+          '<span>Profile: ' + esc(c.candidate_profile) + '</span>' +
+          '<span>Min score: ' + c.min_score + '</span>' +
+          '<span>Lang: ' + esc(c.default_lang) + '</span>' +
+          (c._queue_count ? '<span>Queue: ' + c._queue_count + '</span>' : '') +
+        '</div>' +
+        '<div class=\"preset-card-actions\">' +
+          '<button class=\"btn btn-sm\" data-cname=\"' + esc(c._name) + '\" data-caction=\"edit\">Edit</button>' +
+        '</div></div>';
+    });
+    document.getElementById('campaigns-list').innerHTML = html || '<p style=\"color:var(--muted)\">No campaigns found.</p>';
+  }
+
+  document.getElementById('campaigns-list').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-caction]');
+    if (!btn) return;
+    var name = btn.getAttribute('data-cname');
+    if (btn.getAttribute('data-caction') === 'edit') openEditor(name);
+  });
+
+  document.getElementById('btn-new-campaign').addEventListener('click', function() { openEditor(''); });
+  document.getElementById('edit-close').addEventListener('click', closeEditor);
+  document.getElementById('edit-backdrop').addEventListener('click', closeEditor);
+
+  async function openEditor(name) {
+    var data = { enabled: true, presets: [], candidate_profile: 'default', min_score: 70, default_lang: 'ru', description: '' };
+    if (name) {
+      var r = await apiGet('/api/campaigns/' + encodeURIComponent(name));
+      if (r && r.ok && r.data) data = r.data;
+    }
+    var html = '<div class=\"preset-form\">' +
+      '<div class=\"filter-group\"><label>Name</label><input id=\"cf-name\" value=\"' + esc(name) + '\"></div>' +
+      '<div class=\"filter-group\"><label>Description</label><input id=\"cf-desc\" value=\"' + esc(data.description||'') + '\"></div>' +
+      '<label class=\"check-label\"><input type=\"checkbox\" id=\"cf-enabled\" ' + (data.enabled!==false?'checked':'') + '> Enabled</label>' +
+      '<div class=\"filter-group\"><label>Presets (comma-separated)</label><input id=\"cf-presets\" value=\"' + esc((data.presets||[]).join(', ')) + '\"></div>' +
+      '<div class=\"filter-group\"><label>Candidate Profile</label><input id=\"cf-profile\" value=\"' + esc(data.candidate_profile||'') + '\"></div>' +
+      '<div class=\"filter-group\"><label>Min Score</label><input type=\"number\" id=\"cf-min-score\" value=\"' + (data.min_score||70) + '\"></div>' +
+      '<div class=\"filter-group\"><label>Default Language</label><select id=\"cf-lang\"><option value=\"ru\" ' + (data.default_lang==='ru'?'selected':'') + '>ru</option><option value=\"en\" ' + (data.default_lang==='en'?'selected':'') + '>en</option></select></div>' +
+      '<div class=\"filter-group\"><label>Apply Template</label><input id=\"cf-template\" value=\"' + esc(data.apply_template||'') + '\"></div>' +
+      '<div style=\"margin-top:16px\"><button class=\"btn btn-primary\" id=\"cf-save\">Save</button> <span id=\"cf-msg\" style=\"font-size:12px;color:var(--muted)\"></span></div></div>';
+    document.getElementById('edit-body').innerHTML = html;
+    document.getElementById('edit-backdrop').style.display = 'block';
+    document.getElementById('edit-drawer').style.display = 'flex';
+    document.getElementById('edit-title').textContent = name ? 'Edit: ' + name : 'New Campaign';
+
+    document.getElementById('cf-save').addEventListener('click', function() {
+      var saveData = {
+        enabled: document.getElementById('cf-enabled').checked,
+        description: document.getElementById('cf-desc').value,
+        presets: document.getElementById('cf-presets').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+        candidate_profile: document.getElementById('cf-profile').value.trim(),
+        min_score: parseInt(document.getElementById('cf-min-score').value) || 70,
+        default_lang: document.getElementById('cf-lang').value,
+        apply_template: document.getElementById('cf-template').value.trim() || undefined,
+      };
+      var newName = document.getElementById('cf-name').value.trim();
+      apiPost('/api/campaigns/' + encodeURIComponent(newName || name), saveData).then(function(r) {
+        var el = document.getElementById('cf-msg');
+        el.textContent = r.message;
+        el.style.color = r.ok ? 'var(--success)' : 'var(--danger)';
+        if (r.ok) { setTimeout(function(){ closeEditor(); loadList(); }, 800); }
+      });
+    });
+  }
+
+  function closeEditor() {
+    document.getElementById('edit-backdrop').style.display = 'none';
+    document.getElementById('edit-drawer').style.display = 'none';
+  }
+
+  loadList();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="presets-page">
+  <div class="page-topbar">
+    <a href="/" class="btn btn-sm">&larr; Dashboard</a>
+    <h2>Search Presets</h2>
+    <button class="btn btn-primary btn-sm" id="btn-new-preset">+ New Preset</button>
+  </div>
+
+  <div class="page-tabs">
+    <a href="/presets" class="page-tab active">Presets</a>
+    <a href="/campaigns" class="page-tab">Campaigns</a>
+  </div>
+
+  <div id="presets-list">Loading...</div>
+
+  <!-- Edit drawer -->
+  <div class="queue-drawer-backdrop" id="edit-backdrop" style="display:none"></div>
+  <div class="queue-drawer" id="edit-drawer" style="display:none">
+    <div class="drawer-header">
+      <h3 id="edit-title">Edit Preset</h3>
+      <button class="queue-close" id="edit-close">&times;</button>
+    </div>
+    <div class="drawer-body" id="edit-body"></div>
+  </div>
+</div>
+<div class="toast-container" id="toast-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function toast(msg, ok) {
+    var c = document.getElementById('toast-container');
+    var t = document.createElement('div');
+    t.className = 'toast ' + (ok ? 'ok' : 'error');
+    t.innerHTML = '<span>' + esc(msg) + '</span><button class=\"toast-close\" onclick=\"this.parentElement.remove()\">&times;</button>';
+    c.appendChild(t);
+    setTimeout(function(){ if (t.parentElement) t.remove(); }, 4000);
+  }
+
+  async function apiGet(url) { return (await fetch(url)).json(); }
+  async function apiPost(url, body) {
+    return (await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {}) })).json();
+  }
+
+  // ── Load list ────────────────────────────────────────────────────
+  async function loadList() {
+    var r = await apiGet('/api/presets');
+    if (!r || !r.ok) { document.getElementById('presets-list').textContent = 'Failed to load'; return; }
+    renderList(r.data);
+  }
+
+  function renderList(presets) {
+    var html = '';
+    presets.forEach(function(p) {
+      var perf = p._performance || {};
+      var termCount = (p.search_terms || []).length;
+      var incCount = (p.include && p.include.any ? p.include.any.length : 0) + (p.include && p.include.title ? p.include.title.length : 0);
+      var excCount = (p.exclude && p.exclude.any ? p.exclude.any.length : 0);
+      html += '<div class=\"preset-card ' + (p.enabled ? '' : 'disabled') + '\">' +
+        '<div class=\"preset-card-header\">' +
+          '<span class=\"preset-name\">' + esc(p._name) + '</span>' +
+          '<span class=\"badge ' + (p.enabled ? 'badge-strong_match' : 'badge-auto_hide') + '\">' + (p.enabled ? 'enabled' : 'disabled') + '</span>' +
+        '</div>' +
+        '<div class=\"preset-card-meta\">' +
+          '<span>' + termCount + ' terms</span>' +
+          '<span>' + incCount + ' include</span>' +
+          '<span>' + excCount + ' exclude</span>' +
+          '<span>' + (p.remote_only ? 'remote' : 'all formats') + '</span>' +
+          (p.description ? '<span>' + esc(p.description.substring(0,60)) + '</span>' : '') +
+        '</div>';
+      if (perf.found) {
+        html += '<div class=\"preset-card-perf\">' +
+          '<span>Found: ' + perf.found + '</span>' +
+          '<span>Avg: ' + perf.avg_score + '</span>' +
+          '<span>Strong: ' + perf.strong + '</span>' +
+          '<span>Applied: ' + perf.applied + '</span>' +
+        '</div>';
+      }
+      html += '<div class=\"preset-card-actions\">' +
+        '<button class=\"btn btn-sm\" data-pname=\"' + esc(p._name) + '\" data-paction=\"edit\">Edit</button>' +
+        '<button class=\"btn btn-sm\" data-pname=\"' + esc(p._name) + '\" data-paction=\"clone\">Clone</button>' +
+        (p.enabled
+          ? '<button class=\"btn btn-sm\" data-pname=\"' + esc(p._name) + '\" data-paction=\"disable\">Disable</button>'
+          : '<button class=\"btn btn-sm\" data-pname=\"' + esc(p._name) + '\" data-paction=\"enable\">Enable</button>') +
+        '</div></div>';
+    });
+    document.getElementById('presets-list').innerHTML = html || '<p style=\"color:var(--muted)\">No presets found.</p>';
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────
+  document.getElementById('presets-list').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-paction]');
+    if (!btn) return;
+    var name = btn.getAttribute('data-pname');
+    var action = btn.getAttribute('data-paction');
+    if (action === 'enable') { apiPost('/api/presets/' + encodeURIComponent(name) + '/enable').then(function(r){ toast(r.message, r.ok); loadList(); }); }
+    else if (action === 'disable') { apiPost('/api/presets/' + encodeURIComponent(name) + '/disable').then(function(r){ toast(r.message, r.ok); loadList(); }); }
+    else if (action === 'clone') {
+      var newName = prompt('Clone preset name:');
+      if (!newName) return;
+      apiPost('/api/presets/' + encodeURIComponent(name) + '/clone?new_name=' + encodeURIComponent(newName)).then(function(r){ toast(r.message, r.ok); loadList(); });
+    } else if (action === 'edit') { openEditor(name); }
+  });
+
+  document.getElementById('btn-new-preset').addEventListener('click', function() { openEditor(''); });
+  document.getElementById('edit-close').addEventListener('click', closeEditor);
+  document.getElementById('edit-backdrop').addEventListener('click', closeEditor);
+
+  // ── Editor ───────────────────────────────────────────────────────
+  async function openEditor(name) {
+    var data = { enabled: true, search_terms: [], include: {any:[],title:[],all:[]}, exclude: {any:[],title:[]}, boost: {}, penalties: {}, remote_only: true, areas: [], schedule: [], experience: [], description: '' };
+    if (name) {
+      var r = await apiGet('/api/presets/' + encodeURIComponent(name));
+      if (r && r.ok && r.data) data = r.data;
+    }
+    renderEditor(name, data);
+    document.getElementById('edit-backdrop').style.display = 'block';
+    document.getElementById('edit-drawer').style.display = 'flex';
+    document.getElementById('edit-title').textContent = name ? 'Edit: ' + name : 'New Preset';
+  }
+
+  function closeEditor() {
+    document.getElementById('edit-backdrop').style.display = 'none';
+    document.getElementById('edit-drawer').style.display = 'none';
+  }
+
+  function renderEditor(name, data) {
+    var html = '<div class=\"preset-form\">' +
+      '<div class=\"filter-group\"><label>Name</label><input id=\"pf-name\" value=\"' + esc(name) + '\"></div>' +
+      '<div class=\"filter-group\"><label>Description</label><input id=\"pf-desc\" value=\"' + esc(data.description || '') + '\"></div>' +
+      '<label class=\"check-label\"><input type=\"checkbox\" id=\"pf-enabled\" ' + (data.enabled!==false?'checked':'') + '> Enabled</label>' +
+      '<label class=\"check-label\"><input type=\"checkbox\" id=\"pf-remote\" ' + (data.remote_only?'checked':'') + '> Remote only</label>' +
+      '<h4 style=\"margin-top:12px\">Search Terms</h4>' +
+      '<div id=\"pf-terms\">' + renderEditableList(data.search_terms || [], 'terms') + '</div>' +
+      '<button class=\"btn btn-sm\" onclick=\"window._addPfItem(' + \"'terms'\" + ')\">+ Add Term</button>' +
+      '<h4 style=\"margin-top:12px\">Include (any)</h4>' +
+      '<div id=\"pf-inc-any\">' + renderEditableList(data.include && data.include.any ? data.include.any : [], 'inc-any') + '</div>' +
+      '<button class=\"btn btn-sm\" onclick=\"window._addPfItem(' + \"'inc-any'\" + ')\">+ Add Include</button>' +
+      '<h4 style=\"margin-top:12px\">Exclude (any)</h4>' +
+      '<div id=\"pf-exc-any\">' + renderEditableList(data.exclude && data.exclude.any ? data.exclude.any : [], 'exc-any') + '</div>' +
+      '<button class=\"btn btn-sm\" onclick=\"window._addPfItem(' + \"'exc-any'\" + ')\">+ Add Exclude</button>' +
+      '<div style=\"margin-top:16px;display:flex;gap:8px\">' +
+        '<button class=\"btn btn-primary\" id=\"pf-save\">Save</button>' +
+        '<button class=\"btn btn-secondary\" id=\"pf-validate\">Validate</button>' +
+        '<span id=\"pf-msg\" style=\"font-size:12px;color:var(--muted)\"></span>' +
+      '</div></div>';
+    document.getElementById('edit-body').innerHTML = html;
+
+    document.getElementById('pf-save').addEventListener('click', function() {
+      var newName = document.getElementById('pf-name').value.trim();
+      var saveData = {
+        enabled: document.getElementById('pf-enabled').checked,
+        description: document.getElementById('pf-desc').value,
+        remote_only: document.getElementById('pf-remote').checked,
+        search_terms: readEditableList('terms'),
+        include: { any: readEditableList('inc-any'), all: [], title: [] },
+        exclude: { any: readEditableList('exc-any'), title: [] },
+      };
+      apiPost('/api/presets/' + encodeURIComponent(newName || name), saveData).then(function(r) {
+        document.getElementById('pf-msg').textContent = r.message;
+        document.getElementById('pf-msg').style.color = r.ok ? 'var(--success)' : 'var(--danger)';
+        if (r.ok) { setTimeout(function(){ closeEditor(); loadList(); }, 800); }
+      });
+    });
+
+    document.getElementById('pf-validate').addEventListener('click', function() {
+      var newName = document.getElementById('pf-name').value.trim();
+      var saveData = {
+        search_terms: readEditableList('terms'),
+        include: { any: readEditableList('inc-any'), all: [], title: [] },
+        exclude: { any: readEditableList('exc-any'), title: [] },
+      };
+      apiPost('/api/presets/' + encodeURIComponent(newName || name) + '/validate', saveData).then(function(r) {
+        var el = document.getElementById('pf-msg');
+        el.textContent = r.ok ? 'Valid' : (r.errors||[]).join('; ');
+        el.style.color = r.ok ? 'var(--success)' : 'var(--danger)';
+      });
+    });
+  }
+
+  function renderEditableList(items, id) {
+    return items.map(function(item, i) {
+      return '<div class=\"pf-item\"><input value=\"' + esc(item) + '\" data-pflist=\"' + id + '\" data-pfidx=\"' + i + '\" style=\"flex:1\"><button class=\"btn btn-sm\" onclick=\"this.parentElement.remove()\">x</button></div>';
+    }).join('');
+  }
+
+  function readEditableList(id) {
+    var items = [];
+    document.querySelectorAll('[data-pflist=\"' + id + '\"]').forEach(function(el) {
+      var v = el.value.trim();
+      if (v) items.push(v);
+    });
+    return items;
+  }
+
+  // Global helper for add button
+  window._addPfItem = function(listId) {
+    var containerId = 'pf-' + listId;
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var div = document.createElement('div');
+    div.className = 'pf-item';
+    div.innerHTML = '<input value=\"\" data-pflist=\"' + listId + '\" style=\"flex:1\"><button class=\"btn btn-sm\" onclick=\"this.parentElement.remove()\">x</button>';
+    container.appendChild(div);
+  };
+
+  loadList();
+})();
+</script>
+{% endblock %}

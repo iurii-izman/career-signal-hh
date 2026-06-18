@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import sqlite3
 from argparse import Namespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -562,7 +560,7 @@ def test_budget_stops_full_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         )
     )
 
-    rendered = output.export_text()
+    output.export_text()
     # Should not crash
     assert result == 0
     # Budget should have been used
@@ -659,7 +657,7 @@ def test_force_details_does_not_ignore_budget(
         )
     )
 
-    rendered = output.export_text()
+    output.export_text()
     assert result == 0
     # With force_details, detail calls should be made but within budget
     # Smoke mode max_details=25, max_requests=50
@@ -720,7 +718,7 @@ def test_skip_detail_preserves_description(
         )
     )
 
-    output = _record_console(monkeypatch)
+    _record_console(monkeypatch)
     fake_api = _FakeSearchResponse()
 
     original_init = HHClient.__init__
