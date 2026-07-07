@@ -66,9 +66,12 @@ def _load_candidate() -> dict[str, Any]:
 
 
 def _pick_profile(preset_name: str | None) -> str:
-    if preset_name and preset_name.startswith("ai"):
+    if not preset_name:
+        return "default"
+    name = preset_name.lower()
+    if name.startswith("ai") or any(token in name for token in ("automation", "n8n", "make")):
         return "ai"
-    if preset_name and any(preset_name.startswith(p) for p in ("bitrix", "crm")):
+    if any(token in name for token in ("bitrix", "crm", "integration", "1c", "one_c", "erp")):
         return "bitrix"
     return "default"
 

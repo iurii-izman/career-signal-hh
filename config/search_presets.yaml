@@ -2,8 +2,10 @@ defaults:
   remote_only: true
   areas: []
   schedule:
-  - remote
-  experience: []
+    - remote
+  experience:
+    - between3And6
+    - moreThan6
   salary_as_bonus: true
   language_priority: equal
   decision_thresholds:
@@ -12,107 +14,494 @@ defaults:
     review_later: 50
     weak_match: 25
 presets:
-  ai_rag_remote:
+  crm_systems_analyst_remote:
     enabled: true
-    description: Remote AI / LLM / RAG roles
+    description: "Remote CRM / systems analyst roles with Bitrix24, API and business process fit"
     search_terms:
-    - LLM Engineer
-    - RAG Engineer
-    - AI Automation Engineer
-    - AI Engineer Python
+      - "системный аналитик CRM"
+      - "бизнес аналитик CRM"
+      - "CRM аналитик"
+      - "системный аналитик интеграций"
+      - "systems analyst CRM"
+      - "business systems analyst CRM"
     filters:
       remote_only: true
       areas: []
       schedule:
-      - remote
+        - remote
       experience:
-      - between3And6
-      - moreThan6
+        - between3And6
+        - moreThan6
     include:
       any:
-      - llm
-      - rag
-      - python
-      - fastapi
-      - langchain
-      - langgraph
-      - n8n
+        - crm
+        - bitrix24
+        - битрикс24
+        - rest api
+        - api
+        - webhooks
+        - webhook
+        - интеграции
+        - integration
+        - бизнес-процесс
+        - as-is
+        - to-be
+        - техническое задание
+        - bpmn
       all: []
+      title:
+        - системный аналитик
+        - бизнес-аналитик
+        - crm аналитик
+        - systems analyst
+        - business analyst
+        - integration analyst
     exclude:
       any:
-      - qa automation
-      - casino
-      - gambling
-      - cold calls
+        - холодные звонки
+        - cold calls
+        - call center
+        - оператор call-центра
+        - customer support
+        - technical support
+        - recruiter
+        - talent acquisition
+        - qa automation
+        - ml engineer
+        - machine learning
+        - data scientist
+        - onsite only
+        - office only
+        - командировки обязательны
+        - gambling
+        - casino
       title:
-      - qa engineer
-      - sales manager
+        - менеджер по продажам
+        - sales manager
+        - account manager
+        - project manager
+        - product manager
+        - support specialist
+        - qa engineer
+        - ml engineer
+        - data scientist
+        - python developer
+        - backend developer
+        - frontend developer
     boost:
       title:
-        llm: 20
-        rag: 20
-        ai engineer: 18
-        automation: 10
+        системный аналитик: 18
+        business analyst: 14
+        systems analyst: 16
+        crm аналитик: 18
+        crm: 12
+        integration analyst: 16
       skills:
-        python: 12
-        fastapi: 8
-        rag: 12
+        bitrix24: 12
+        crm: 10
+        rest api: 10
+        webhooks: 8
+        bpmn: 8
       description:
-        api integration: 8
-        business process automation: 8
+        автоматизация бизнес-процессов: 12
+        business process automation: 12
+        техническое задание: 10
+        as-is: 8
+        to-be: 8
     penalties:
       title:
-        qa engineer: 35
-        sales manager: 40
+        project manager: 18
+        product manager: 20
+        developer: 15
       description:
         onsite only: 40
+        office only: 40
+        командировки обязательны: 35
         cold calls: 35
+
   bitrix24_crm_remote:
     enabled: true
-    description: Remote Bitrix24 / CRM / 1C roles
+    description: "Remote Bitrix24 / CRM implementation and integration analyst roles"
     search_terms:
-    - Битрикс24
-    - Bitrix24
-    - CRM аналитик
-    - Интегратор Битрикс24
-    - 1С CRM
+      - "аналитик Битрикс24"
+      - "интегратор Битрикс24"
+      - "Битрикс24 CRM"
+      - "CRM Битрикс24"
+      - "Bitrix24 analyst"
+      - "Bitrix24 integration"
     filters:
       remote_only: true
       areas: []
       schedule:
-      - remote
+        - remote
       experience:
-      - between3And6
-      - moreThan6
+        - between3And6
+        - moreThan6
     include:
       any:
-      - битрикс24
-      - bitrix24
-      - crm
-      - 1с
-      - бизнес-процесс
-      - интеграции
+        - битрикс24
+        - bitrix24
+        - crm
+        - 1с
+        - 1c
+        - смарт-процесс
+        - smart process
+        - бизнес-процесс
+        - integration
+        - интеграции
+        - webhooks
+        - телефония
       all: []
+      title:
+        - аналитик битрикс24
+        - интегратор битрикс24
+        - crm analyst
+        - implementation analyst
     exclude:
       any:
-      - оператор call-центра
-      - холодные звонки
+        - холодные звонки
+        - customer support
+        - техническая поддержка
+        - qa automation
+        - data scientist
+        - ml engineer
+        - casino
+        - gambling
       title:
-      - менеджер по продажам
+        - sales manager
+        - менеджер по продажам
+        - account manager
+        - support specialist
+        - php developer
     boost:
       title:
-        битрикс24: 20
+        битрикс24: 22
+        bitrix24: 22
         crm: 12
-        1с: 14
+        интегратор: 12
       skills:
         битрикс24: 14
+        bitrix24: 14
         crm: 10
+        1с: 12
+        1c: 12
       description:
-        смарт-процессы: 10
-        бизнес-процессы: 10
+        смарт-процессы: 12
+        smart process: 10
         интеграции с 1с: 15
+        rest api: 10
+        webhooks: 8
     penalties:
       title:
-        менеджер по продажам: 40
+        php developer: 20
       description:
         холодные звонки: 35
+        office only: 35
+        onsite only: 35
+
+  integration_analyst_remote:
+    enabled: true
+    description: "Remote integration analyst roles with API, webhooks, CRM and 1C fit"
+    search_terms:
+      - "integration analyst"
+      - "аналитик интеграций"
+      - "системный аналитик интеграций"
+      - "api integration analyst"
+      - "crm integration analyst"
+      - "1с интеграции"
+    filters:
+      remote_only: true
+      areas: []
+      schedule:
+        - remote
+      experience:
+        - between3And6
+        - moreThan6
+    include:
+      any:
+        - api
+        - rest api
+        - webhooks
+        - webhook
+        - openapi
+        - postman
+        - интеграции
+        - integration
+        - crm
+        - bitrix24
+        - 1с
+        - 1c
+        - sql
+      all: []
+      title:
+        - integration analyst
+        - аналитик интеграций
+        - системный аналитик
+        - systems analyst
+        - implementation analyst
+    exclude:
+      any:
+        - qa automation
+        - ml engineer
+        - data scientist
+        - customer support
+        - call center
+        - cold calls
+        - onsite only
+        - office only
+        - gambling
+      title:
+        - sales manager
+        - менеджер по продажам
+        - account manager
+        - support engineer
+        - backend developer
+        - frontend developer
+    boost:
+      title:
+        integration analyst: 20
+        аналитик интеграций: 20
+        api integration: 16
+      skills:
+        rest api: 12
+        webhooks: 10
+        openapi: 8
+        postman: 8
+        sql: 6
+      description:
+        bitrix24: 10
+        crm: 8
+        интеграции с 1с: 12
+        техническое задание: 10
+    penalties:
+      title:
+        developer: 15
+      description:
+        office only: 35
+        onsite only: 35
+        командировки обязательны: 30
+
+  one_c_integration_analyst_remote:
+    enabled: true
+    description: "Remote 1C / ERP / CRM integration analyst roles, not accounting support"
+    search_terms:
+      - "1с интеграции"
+      - "1C integration analyst"
+      - "ERP CRM analyst"
+      - "аналитик 1С CRM"
+      - "системный аналитик 1С"
+    filters:
+      remote_only: true
+      areas: []
+      schedule:
+        - remote
+      experience:
+        - between3And6
+        - moreThan6
+    include:
+      any:
+        - 1с
+        - 1c
+        - erp
+        - crm
+        - bitrix24
+        - интеграции
+        - integration
+        - api
+        - webhooks
+        - sql
+      all: []
+      title:
+        - аналитик 1с
+        - системный аналитик 1с
+        - 1c integration analyst
+        - erp analyst
+    exclude:
+      any:
+        - бухгалтерия
+        - payroll
+        - helpdesk
+        - support
+        - qa automation
+        - cold calls
+      title:
+        - бухгалтер
+        - 1с программист
+        - sales manager
+        - support specialist
+    boost:
+      title:
+        1с: 16
+        1c: 16
+        erp: 10
+      skills:
+        1с: 12
+        1c: 12
+        sql: 8
+        api: 8
+      description:
+        crm: 8
+        bitrix24: 8
+        webhooks: 6
+        интеграции с 1с: 14
+    penalties:
+      title:
+        1с программист: 20
+      description:
+        бухгалтерия: 25
+        office only: 35
+        onsite only: 35
+
+  no_code_automation_remote:
+    enabled: true
+    description: "Remote no-code / low-code automation roles with CRM and process fit"
+    search_terms:
+      - "n8n automation"
+      - "Make automation"
+      - "low-code automation"
+      - "no-code automation"
+      - "CRM automation analyst"
+      - "automation analyst"
+    filters:
+      remote_only: true
+      areas: []
+      schedule:
+        - remote
+      experience:
+        - between3And6
+        - moreThan6
+    include:
+      any:
+        - n8n
+        - make
+        - automation
+        - автоматизация
+        - no-code
+        - low-code
+        - crm
+        - bitrix24
+        - webhooks
+        - api
+        - бизнес-процесс
+      all: []
+      title:
+        - automation analyst
+        - crm automation
+        - no-code
+        - low-code
+    exclude:
+      any:
+        - qa automation
+        - marketing automation only
+        - sales only
+        - cold calls
+        - casino
+        - gambling
+      title:
+        - sales manager
+        - account manager
+        - customer support
+        - qa engineer
+    boost:
+      title:
+        automation analyst: 18
+        crm automation: 16
+        no-code: 14
+        low-code: 14
+      skills:
+        n8n: 14
+        make: 14
+        crm: 8
+        webhooks: 8
+      description:
+        business process automation: 12
+        автоматизация бизнес-процессов: 12
+        bitrix24: 8
+        api integration: 8
+    penalties:
+      description:
+        marketing automation only: 20
+        office only: 35
+        onsite only: 35
+
+  ai_rag_remote:
+    enabled: true
+    description: "Remote AI automation roles with explicit CRM/API/no-code relevance"
+    search_terms:
+      - "AI automation analyst"
+      - "AI automation engineer"
+      - "LLM automation"
+      - "GPT automation"
+      - "CRM AI automation"
+      - "n8n AI automation"
+    filters:
+      remote_only: true
+      areas: []
+      schedule:
+        - remote
+      experience:
+        - between3And6
+        - moreThan6
+    include:
+      any:
+        - ai automation
+        - llm
+        - gpt
+        - openai
+        - n8n
+        - make
+        - crm
+        - bitrix24
+        - rest api
+        - api integration
+        - webhook
+        - business process automation
+      all: []
+      title:
+        - ai automation
+        - automation analyst
+        - automation engineer
+        - llm automation
+        - crm automation
+    exclude:
+      any:
+        - qa automation
+        - ml engineer
+        - machine learning research
+        - deep learning research
+        - computer vision
+        - data scientist
+        - prompt annotator
+        - cold calls
+        - casino
+        - gambling
+      title:
+        - qa engineer
+        - data scientist
+        - ml engineer
+        - sales manager
+    boost:
+      title:
+        ai automation: 22
+        automation analyst: 18
+        automation engineer: 18
+        crm automation: 16
+      skills:
+        llm: 12
+        n8n: 12
+        make: 12
+        openai: 10
+        bitrix24: 8
+      description:
+        api integration: 12
+        business process automation: 14
+        webhook: 10
+        crm: 8
+    penalties:
+      title:
+        ml engineer: 25
+        data scientist: 25
+      description:
+        computer vision: 18
+        deep learning research: 18
+        onsite only: 35

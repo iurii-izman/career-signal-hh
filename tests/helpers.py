@@ -57,10 +57,14 @@ def load_fixture_yaml(name: str) -> dict[str, Any]:
 # ── Vacancy factories ────────────────────────────────────────────────────────
 
 
-def make_vacancy_from_fixture(name: str, source_profile: str | None = None) -> Vacancy:
+def make_vacancy_from_fixture(
+    name: str,
+    source_profile: str | None = None,
+    source_query: str | None = None,
+) -> Vacancy:
     """Build a Vacancy model from a fixture JSON file."""
     data = load_fixture_json(name)
-    return Vacancy.from_hh(data, source_profile=source_profile)
+    return Vacancy.from_hh(data, source_profile=source_profile, source_query=source_query)
 
 
 def seed_vacancies(storage: Storage, *fixture_names: str) -> list[Vacancy]:
@@ -84,7 +88,11 @@ def seed_vacancies_with_scores(
 
     vacancies: list[Vacancy] = []
     for name in fixture_names:
-        v = make_vacancy_from_fixture(name, source_profile=preset_name)
+        v = make_vacancy_from_fixture(
+            name,
+            source_profile=preset_name,
+            source_query=(preset.get("search_terms") or [None])[0],
+        )
         storage.upsert_vacancy(v)
         details = compute_score_details(v, {**preset, "_name": preset_name})
         storage.upsert_score_details(details)

@@ -234,6 +234,26 @@ def test_dry_plan_no_api_calls(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Search terms" in captured or "terms" in captured.lower()
 
 
+def test_dry_plan_uses_merged_preset_filters(tmp_path: Path, monkeypatch, capsys) -> None:
+    """dry-plan must show merged schedule/experience, not empty raw filters."""
+    storage = make_storage(tmp_path)
+    monkeypatch.setenv("DB_PATH", str(storage.path))
+    monkeypatch.setattr(
+        "src.search_presets.load_search_presets",
+        lambda *a, **kw: _load_preset(),
+    )
+
+    from argparse import Namespace
+
+    from src.commands.search_lab import command_search_lab_dry_plan
+
+    result = command_search_lab_dry_plan(Namespace(preset="ai_rag_test"))
+    captured = capsys.readouterr().out
+    assert result == 0
+    assert "between3And6" in captured
+    assert "moreThan6" in captured
+
+
 # ── export creates files ─────────────────────────────────────────────────────
 
 
@@ -283,3 +303,63 @@ def test_high_quality_keywords_returns_data(tmp_path: Path) -> None:
     assert len(keywords) > 0, "Should find keywords in scored vacancy"
     kw_names = {k["keyword"] for k in keywords}
     assert "python" in kw_names or "llm" in kw_names or "rag" in kw_names
+
+
+def test_search_term_performance_uses_source_query_for_per_term_quality(tmp_path: Path) -> None:
+    """Per-term analytics must use source_query instead of profile-wide vacancy totals."""
+    from src.scoring_v2 import _to_score_result, compute_score_details
+    from tests.helpers import make_vacancy_from_fixture
+
+    storage = make_storage(tmp_path)
+    preset = _load_preset()["presets"]["ai_rag_test"]
+
+    strong = make_vacancy_from_fixture(
+        "hh_vacancy_ai_good.json",
+        source_profile="ai_rag_test",
+        source_query="AI Engineer",
+    )
+    weak = make_vacancy_from_fixture(
+        "hh_vacancy_ai_bad_qa.json",
+        source_profile="ai_rag_test",
+        source_query="LLM Engineer",
+    )
+
+    for vacancy in (strong, weak):
+        storage.upsert_vacancy(vacancy)
+        details = compute_score_details(vacancy, {**preset, "_name": "ai_rag_test"})
+        storage.upsert_score_details(details)
+        storage.upsert_score(_to_score_result(details))
+
+    storage.add_search_run(
+        {
+            "started_at": "2026-07-08T10:00:00+00:00",
+            "finished_at": "2026-07-08T10:01:00+00:00",
+            "profile_name": "ai_rag_test",
+            "query": "AI Engineer",
+            "area_id": None,
+            "found_count": 10,
+            "loaded_count": 1,
+            "new_count": 1,
+            "updated_count": 0,
+            "error": None,
+        }
+    )
+    storage.add_search_run(
+        {
+            "started_at": "2026-07-08T10:02:00+00:00",
+            "finished_at": "2026-07-08T10:03:00+00:00",
+            "profile_name": "ai_rag_test",
+            "query": "LLM Engineer",
+            "area_id": None,
+            "found_count": 10,
+            "loaded_count": 1,
+            "new_count": 1,
+            "updated_count": 0,
+            "error": None,
+        }
+    )
+
+    rows = {row["term"]: row for row in storage.search_term_performance("ai_rag_test")}
+    assert rows["AI Engineer"]["vacancy_count"] == 1
+    assert rows["LLM Engineer"]["vacancy_count"] == 1
+    assert rows["AI Engineer"]["avg_score"] != rows["LLM Engineer"]["avg_score"]

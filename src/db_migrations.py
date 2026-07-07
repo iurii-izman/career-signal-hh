@@ -82,6 +82,14 @@ def _migration_007_add_confidence_noise(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_008_add_source_query(connection: sqlite3.Connection) -> None:
+    safe_add_column(connection, "vacancies", "source_query", "TEXT")
+    safe_create_index(
+        connection,
+        "CREATE INDEX IF NOT EXISTS idx_vacancies_source_profile_query ON vacancies(source_profile, source_query)",
+    )
+
+
 MIGRATIONS: list[MigrationEntry] = [
     (
         1,
@@ -94,7 +102,7 @@ MIGRATIONS: list[MigrationEntry] = [
             salary_currency TEXT, schedule_name TEXT, employment_name TEXT,
             experience_name TEXT, description_html TEXT, description_text TEXT,
             key_skills_json TEXT, raw_json TEXT NOT NULL, first_seen_at TEXT NOT NULL,
-            last_seen_at TEXT NOT NULL, source_profile TEXT
+            last_seen_at TEXT NOT NULL, source_profile TEXT, source_query TEXT
         );
         CREATE TABLE IF NOT EXISTS scores (
             vacancy_id TEXT PRIMARY KEY, total_score INTEGER,
@@ -196,6 +204,11 @@ MIGRATIONS: list[MigrationEntry] = [
         7,
         "007_confidence_noise_quality_flags",
         _migration_007_add_confidence_noise,
+    ),
+    (
+        8,
+        "008_vacancies_source_query",
+        _migration_008_add_source_query,
     ),
 ]
 

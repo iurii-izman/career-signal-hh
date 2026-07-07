@@ -31,11 +31,17 @@ class Vacancy(BaseModel):
     first_seen_at: str
     last_seen_at: str
     source_profile: str | None = None
+    source_query: str | None = None
     snippet_requirement: str = ""
     snippet_responsibility: str = ""
 
     @classmethod
-    def from_hh(cls, data: dict[str, Any], source_profile: str | None = None) -> "Vacancy":
+    def from_hh(
+        cls,
+        data: dict[str, Any],
+        source_profile: str | None = None,
+        source_query: str | None = None,
+    ) -> "Vacancy":
         now = datetime.now(timezone.utc).isoformat()
         salary = data.get("salary") or {}
         description = data.get("description") or ""
@@ -66,6 +72,7 @@ class Vacancy(BaseModel):
             first_seen_at=now,
             last_seen_at=now,
             source_profile=source_profile,
+            source_query=source_query,
             snippet_requirement=html_to_text(snippet.get("requirement")),
             snippet_responsibility=html_to_text(snippet.get("responsibility")),
         )

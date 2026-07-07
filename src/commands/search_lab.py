@@ -279,11 +279,10 @@ def command_search_lab_dry_plan(args: argparse.Namespace) -> int:
         return 1
 
     search_terms = preset.get("search_terms", [])
-    filters = preset.get("filters", {})
-    remote_only = filters.get("remote_only", True)
-    areas = filters.get("areas", [])
-    schedule = filters.get("schedule", [])
-    experience = filters.get("experience", [])
+    remote_only = preset.get("remote_only", True)
+    areas = preset.get("areas", [])
+    schedule = preset.get("schedule", [])
+    experience = preset.get("experience", [])
 
     # Estimate API requests:
     # - 1 request per search term (per page, but minimum 1)

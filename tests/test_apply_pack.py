@@ -9,6 +9,7 @@ from pathlib import Path
 from src.commands.apply_pack import (
     _build_fit_summary,
     _generate_md,
+    _pick_profile,
     _resolve_template,
 )
 from src.models import Vacancy
@@ -70,6 +71,12 @@ def test_fallback_when_template_missing(tmp_path: Path, monkeypatch) -> None:
     # Request a template that doesn't exist — should fallback to default
     text = _resolve_template("nonexistent", "ru", "medium")
     assert "Medium RU:" in text  # falls back to default.ru.medium
+
+
+def test_pick_profile_understands_new_preset_names() -> None:
+    assert _pick_profile("crm_systems_analyst_remote") == "bitrix"
+    assert _pick_profile("integration_analyst_remote") == "bitrix"
+    assert _pick_profile("no_code_automation_remote") == "ai"
 
 
 def test_short_medium_detailed_differ(tmp_path: Path, monkeypatch) -> None:

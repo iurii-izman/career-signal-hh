@@ -726,6 +726,42 @@ def test_touch_vacancy_preserves_description(tmp_path: Path) -> None:
     assert storage.touch_vacancy("nonexistent") is False
 
 
+def test_touch_vacancy_can_refresh_source_attribution(tmp_path: Path) -> None:
+    """touch_vacancy should update source_profile/source_query for seen-again vacancies."""
+    storage = Storage(str(tmp_path / "test.sqlite"))
+    now = datetime.now(timezone.utc).isoformat()
+    storage.upsert_vacancy(
+        Vacancy(
+            id="v-source",
+            name="Test",
+            description_text="Original description",
+            raw_json="{}",
+            first_seen_at=now,
+            last_seen_at=now,
+            source_profile="old_profile",
+            source_query="old query",
+        )
+    )
+
+    assert (
+        storage.touch_vacancy(
+            "v-source",
+            source_profile="new_profile",
+            source_query="new query",
+        )
+        is True
+    )
+
+    with storage.connect() as conn:
+        row = conn.execute(
+            "SELECT source_profile, source_query FROM vacancies WHERE id = ?",
+            ("v-source",),
+        ).fetchone()
+
+    assert row["source_profile"] == "new_profile"
+    assert row["source_query"] == "new query"
+
+
 def test_skip_detail_preserves_description(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

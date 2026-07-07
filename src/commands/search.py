@@ -300,10 +300,18 @@ def command_search(args: argparse.Namespace) -> int:
                                     )
                                 run_counters["skipped_by_budget"] += 1
                                 if storage.vacancy_exists(vacancy_id):
-                                    storage.touch_vacancy(vacancy_id)
+                                    storage.touch_vacancy(
+                                        vacancy_id,
+                                        source_profile=profile_name,
+                                        source_query=query,
+                                    )
                                     counters["updated_count"] += 1
                                 else:
-                                    vacancy = Vacancy.from_hh(summary, profile_name)
+                                    vacancy = Vacancy.from_hh(
+                                        summary,
+                                        source_profile=profile_name,
+                                        source_query=query,
+                                    )
                                     is_new = storage.upsert_vacancy(vacancy)
                                     _score_and_store(storage, vacancy, rules, unit)
                                     counters["new_count" if is_new else "updated_count"] += 1
@@ -311,12 +319,20 @@ def command_search(args: argparse.Namespace) -> int:
                                 continue
 
                             detail = client.get_vacancy(vacancy_id)
-                            vacancy = Vacancy.from_hh(detail, profile_name)
+                            vacancy = Vacancy.from_hh(
+                                detail,
+                                source_profile=profile_name,
+                                source_query=query,
+                            )
                             if verbose:
                                 console.print(f"    detail: {vacancy.name[:60]}")
                         else:
                             run_counters["skipped_existing_details"] += 1
-                            storage.touch_vacancy(vacancy_id)
+                            storage.touch_vacancy(
+                                vacancy_id,
+                                source_profile=profile_name,
+                                source_query=query,
+                            )
                             counters["updated_count"] += 1
                             counters["loaded_count"] += 1
                             if verbose:

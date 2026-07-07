@@ -1,18 +1,86 @@
 candidate:
   name_ru: "Юрий Изман"
   name_en: "Iurii Izman"
-  location: "Tiraspol, Moldova"
+  public_title_ru: "Системный аналитик по CRM, интеграциям и AI-автоматизации"
+  public_title_en: "Systems Analyst — CRM, Integrations and AI Automation"
+  location: "Remote / Chisinau timezone"
   availability: "remote / hybrid / Chisinau / international"
+  work_format:
+    remote_only: true
+    relocation: false
+    business_trips: false
+  languages:
+    ru: native
+    en: B2
+    ro: A2
   links:
     github: "https://github.com/iurii-izman"
     linkedin: "https://linkedin.com/in/iurii-izman"
+  constraints:
+    do_not_write_in_cover_letter:
+      - Tiraspol
+      - Moldova
+      - citizenship
+      - documents
+      - leaving previous job
+    avoid_roles:
+      - sales
+      - support
+      - project_manager_without_analysis
+      - ml_engineer
+      - data_scientist
+      - onsite_only
+      - cold_calls
+  experience:
+    years_total: "6+"
+    primary_stack:
+      - Bitrix24
+      - CRM
+      - REST API
+      - Webhooks
+      - 1C integrations
+      - Postman
+      - SQL
+      - PostgreSQL
+      - Python
+      - Docker
+      - n8n
+      - Make
+      - BPMN
+      - AS-IS/TO-BE
+      - Jira
+      - Confluence
   profiles:
-    ai:
-      summary_ru: "AI Automation & Systems Integration Engineer с опытом построения RAG-пайплайнов, API-интеграций и n8n-автоматизаций."
-      summary_en: "AI Automation & Systems Integration Engineer with experience building RAG pipelines, API integrations, and n8n automation."
-    bitrix:
-      summary_ru: "Ведущий аналитик / архитектор CRM-решений с опытом внедрения Битрикс24, 1С-интеграций и автоматизации бизнес-процессов."
-      summary_en: "Lead analyst / CRM solutions architect with experience in Bitrix24 implementation, 1C integrations, and business process automation."
     default:
-      summary_ru: "Специалист по автоматизации и системной интеграции."
-      summary_en: "Automation and systems integration specialist."
+      summary_ru: "Системный аналитик по CRM и интеграциям: Битрикс24, 1С, REST API, webhooks, AS-IS/TO-BE, ТЗ и автоматизация бизнес-процессов."
+      summary_en: "Systems analyst focused on CRM and integrations: Bitrix24, 1C, REST API, webhooks, AS-IS/TO-BE, specifications and business process automation."
+    crm_sa:
+      summary_ru: "Системный аналитик по CRM и интеграциям: Битрикс24, 1С, REST API, webhooks, AS-IS/TO-BE, ТЗ и автоматизация бизнес-процессов."
+      summary_en: "Systems analyst focused on CRM and integrations: Bitrix24, 1C, REST API, webhooks, AS-IS/TO-BE, specifications and business process automation."
+    bitrix24_integration:
+      summary_ru: "Аналитик Битрикс24 и CRM-интеграций: воронки, поля, роботы, триггеры, смарт-процессы, роли и интеграции с 1С, сайтом, телефонией и БД."
+      summary_en: "Bitrix24 and CRM integration analyst: pipelines, fields, automations, triggers, smart processes, roles and integrations with 1C, websites, telephony and databases."
+    ai_automation:
+      summary_ru: "CRM/AI automation analyst: webhook-сценарии, LLM-классификация заявок, n8n/Make, Bitrix24 REST API и human-in-the-loop проверки."
+      summary_en: "CRM/AI automation analyst: webhook workflows, LLM-based lead classification, n8n/Make, Bitrix24 REST API and human-in-the-loop review."
+    ai:
+      summary_ru: "CRM/AI automation analyst: webhook-сценарии, LLM-классификация заявок, n8n/Make, Bitrix24 REST API и human-in-the-loop проверки."
+      summary_en: "CRM/AI automation analyst: webhook workflows, LLM-based lead classification, n8n/Make, Bitrix24 REST API and human-in-the-loop review."
+    bitrix:
+      summary_ru: "Аналитик Битрикс24 и CRM-интеграций: воронки, поля, роботы, триггеры, смарт-процессы, роли и интеграции с 1С, сайтом, телефонией и БД."
+      summary_en: "Bitrix24 and CRM integration analyst: pipelines, fields, automations, triggers, smart processes, roles and integrations with 1C, websites, telephony and databases."
+  real_ai_case:
+    trigger_keywords:
+      - ai
+      - llm
+      - gpt
+      - openai
+      - n8n
+      - make
+      - automation
+      - ai automation
+      - artificial intelligence
+      - нейросети
+      - искусственный интеллект
+    ru: "Из практики: реализовал AI Lead Intake для Битрикс24 — webhook-сценарий с LLM-классификацией входящих заявок и автосозданием сделок. Код открыт: github.com/iurii-izman/ai-lead-intake-bitrix24"
+    en: "From practice: I implemented AI Lead Intake for Bitrix24 — a webhook workflow with LLM classification of incoming requests and automatic deal creation. Code: github.com/iurii-izman/ai-lead-intake-bitrix24"

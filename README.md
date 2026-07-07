@@ -119,10 +119,10 @@ python -m src.main wizard apply --plan
 Анализируйте и оптимизируйте поисковые запросы:
 
 ```powershell
-python -m src.main search-lab terms --preset ai_rag_remote
-python -m src.main search-lab suggest-terms --preset ai_rag_remote
-python -m src.main search-lab compare --preset-a ai_rag_remote --preset-b bitrix24_crm_remote
-python -m src.main search-lab dry-plan --preset ai_rag_remote
+python -m src.main search-lab terms --preset crm_systems_analyst_remote
+python -m src.main search-lab suggest-terms --preset crm_systems_analyst_remote
+python -m src.main search-lab compare --preset-a crm_systems_analyst_remote --preset-b integration_analyst_remote
+python -m src.main search-lab dry-plan --preset no_code_automation_remote
 python -m src.main search-lab export
 ```
 
@@ -199,6 +199,7 @@ campaigns:
     candidate_profile: ai       # references candidate.yaml profiles.ai
     presets:
       - ai_rag_remote
+      - no_code_automation_remote
     default_lang: ru
     min_score: 70
     apply_template: ai_rag_remote
@@ -407,6 +408,15 @@ CareerSignal HH поддерживает универсальные поиско
 (`ai_automation`, `bitrix_1c`) и позволяют создавать произвольные поиски
 без редактирования кода.
 
+Текущая рабочая матрица поиска:
+
+- `crm_systems_analyst_remote` — основной P0 пресет под CRM / systems analyst.
+- `bitrix24_crm_remote` — Bitrix24 / CRM implementation и integration fit.
+- `integration_analyst_remote` — API / webhook / CRM / 1C integration analyst.
+- `one_c_integration_analyst_remote` — 1C / ERP / CRM интеграции без бухгалтерского шума.
+- `no_code_automation_remote` — n8n / Make / low-code automation с CRM-контекстом.
+- `ai_rag_remote` — только AI automation роли, где есть явный CRM/API/no-code сигнал.
+
 ### Отличия от legacy profiles
 
 | Характеристика | Legacy profiles | Universal presets |
@@ -422,7 +432,7 @@ CareerSignal HH поддерживает универсальные поиско
 
 ```powershell
 python -m src.main presets list
-python -m src.main presets show ai_rag_remote
+python -m src.main presets show crm_systems_analyst_remote
 ```
 
 ### Управление пресетами
@@ -432,7 +442,7 @@ python -m src.main presets show ai_rag_remote
 python -m src.main presets create my-preset --terms "Python,AI,LLM" --include "python,ai,llm" --exclude "qa,gambling"
 
 # Клонировать
-python -m src.main presets clone ai_rag_remote my-copy
+python -m src.main presets clone crm_systems_analyst_remote my-copy
 
 # Добавить/удалить поисковый термин
 python -m src.main presets add-term my-preset "RAG Engineer"
@@ -459,8 +469,8 @@ python -m src.main presets validate
 ### Поиск по пресету
 
 ```powershell
-python -m src.main search --preset ai_rag_remote --mode smoke
-python -m src.main search --preset bitrix24_crm_remote --mode normal
+python -m src.main search --preset crm_systems_analyst_remote --mode smoke
+python -m src.main search --preset integration_analyst_remote --mode normal
 ```
 
 По умолчанию (без --preset/--profile/--adhoc):

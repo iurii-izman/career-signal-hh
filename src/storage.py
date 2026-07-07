@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS vacancies (
     salary_currency TEXT, schedule_name TEXT, employment_name TEXT,
     experience_name TEXT, description_html TEXT, description_text TEXT,
     key_skills_json TEXT, raw_json TEXT NOT NULL, first_seen_at TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL, source_profile TEXT
+    last_seen_at TEXT NOT NULL, source_profile TEXT, source_query TEXT
 );
 CREATE TABLE IF NOT EXISTS scores (
     vacancy_id TEXT PRIMARY KEY, total_score INTEGER,
@@ -102,6 +102,7 @@ VACANCY_COLUMNS = [
     "first_seen_at",
     "last_seen_at",
     "source_profile",
+    "source_query",
 ]
 
 
@@ -208,16 +209,30 @@ class Storage:
             ).fetchone()
         return row is not None
 
-    def touch_vacancy(self, vacancy_id: str) -> bool:
-        """Update last_seen_at for an existing vacancy without touching other fields.
+    def touch_vacancy(
+        self,
+        vacancy_id: str,
+        source_profile: str | None = None,
+        source_query: str | None = None,
+    ) -> bool:
+        """Update last_seen_at and optionally refresh source attribution fields.
 
         Returns True if the vacancy exists and was updated, False otherwise.
         """
         now = datetime.now(timezone.utc).isoformat()
+        updates = ["last_seen_at = ?"]
+        params: list[Any] = [now]
+        if source_profile is not None:
+            updates.append("source_profile = ?")
+            params.append(source_profile)
+        if source_query is not None:
+            updates.append("source_query = ?")
+            params.append(source_query)
+        params.append(vacancy_id)
         with self.connect() as connection:
             cursor = connection.execute(
-                "UPDATE vacancies SET last_seen_at = ? WHERE id = ?",
-                (now, vacancy_id),
+                f"UPDATE vacancies SET {', '.join(updates)} WHERE id = ?",
+                params,
             )
             return cursor.rowcount > 0
 
@@ -734,7 +749,9 @@ class Storage:
                     SUM(CASE WHEN COALESCE(r.status, 'new') IN ('rejected', 'archived') THEN 1 ELSE 0 END) AS rejected_count,
                     SUM(CASE WHEN COALESCE(r.status, 'new') IN ('applied', 'interview', 'offer') THEN 1 ELSE 0 END) AS good_outcome_count
                 FROM search_runs sr
-                LEFT JOIN vacancies v ON v.source_profile = sr.profile_name
+                LEFT JOIN vacancies v
+                  ON v.source_profile = sr.profile_name
+                 AND v.source_query = sr.query
                 LEFT JOIN scores s ON s.vacancy_id = v.id
                 LEFT JOIN score_details sd ON sd.vacancy_id = v.id
                 LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
