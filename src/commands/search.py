@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.prompt import Confirm
 
@@ -114,6 +115,7 @@ def _build_estimate_selected(search_units: list[dict[str, Any]]) -> dict[str, An
 
 
 def command_search(args: argparse.Namespace) -> int:
+    load_dotenv()
     search_config = _resolve_search_config(args)
     search_config["_mode_name"] = args.mode or "normal"
     search_config["_force_details"] = args.force_details

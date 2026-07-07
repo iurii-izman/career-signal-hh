@@ -49,6 +49,7 @@ class HHClient:
         timeout: int = 20,
         auth_mode: str | None = None,
         app_access_token: str | None = None,
+        user_access_token: str | None = None,
     ) -> None:
         self.timeout = timeout
         self.auth_mode = (
@@ -59,17 +60,28 @@ class HHClient:
             if app_access_token is not None
             else os.getenv("HH_APP_ACCESS_TOKEN", "")
         ).strip()
+        self.user_access_token = (
+            user_access_token
+            if user_access_token is not None
+            else os.getenv("HH_USER_ACCESS_TOKEN", "")
+        ).strip()
         self.user_agent = user_agent or os.getenv("HH_USER_AGENT", "CareerSignalHH/0.1")
         self.session = requests.Session()
         self.session.headers.update(
             {"User-Agent": self.user_agent, "Accept": "application/json"}
         )
-        if self.auth_mode == "application_token" and self.app_access_token:
-            self.session.headers["Authorization"] = f"Bearer {self.app_access_token}"
+        if self.auth_mode in {"application_token", "user_oauth"} and self.active_token:
+            self.session.headers["Authorization"] = f"Bearer {self.active_token}"
 
         # Rate limiting configuration
-        self.delay_min = float(os.getenv("HH_DELAY_MIN_SECONDS", "0.7"))
-        self.delay_max = float(os.getenv("HH_DELAY_MAX_SECONDS", "1.5"))
+        self.delay_min = self._env_float(
+            ("HH_DELAY_MIN_SECONDS", "REQUEST_DELAY_MIN"),
+            "0.7",
+        )
+        self.delay_max = self._env_float(
+            ("HH_DELAY_MAX_SECONDS", "REQUEST_DELAY_MAX"),
+            "1.5",
+        )
         self.cooldown_429 = float(os.getenv("HH_COOLDOWN_ON_429_SECONDS", "120"))
         self.stop_on_429 = os.getenv("HH_STOP_ON_429", "true").strip().lower() == "true"
 
@@ -84,6 +96,40 @@ class HHClient:
         self.stats_dict_requests: int = 0
         self.stats_attempted_requests: int = 0
 
+    @staticmethod
+    def _env_float(names: tuple[str, ...], default: str) -> float:
+        """Read the first non-empty env var from *names* and parse it as float."""
+        for name in names:
+            raw = os.getenv(name, "").strip()
+            if not raw:
+                continue
+            try:
+                return float(raw)
+            except ValueError:
+                break
+        return float(default)
+
+    @property
+    def active_token(self) -> str:
+        """Return the token relevant for the current auth mode."""
+        if self.auth_mode == "user_oauth":
+            return self.user_access_token
+        if self.auth_mode == "application_token":
+            return self.app_access_token
+        return ""
+
+    @property
+    def active_token_env_name(self) -> str:
+        """Return the env var name for the current auth mode token."""
+        if self.auth_mode == "user_oauth":
+            return "HH_USER_ACCESS_TOKEN"
+        return "HH_APP_ACCESS_TOKEN"
+
+    @property
+    def active_token_present(self) -> bool:
+        """Return whether the token required by the current auth mode is present."""
+        return bool(self.active_token)
+
     def _validate_auth(self) -> None:
         if self.auth_mode == "application_token" and not self.app_access_token:
             raise HHConfigurationError(
@@ -91,10 +137,13 @@ class HHClient:
                 "Добавьте токен приложения в .env."
             )
         if self.auth_mode == "user_oauth":
-            raise NotImplementedError(
-                "HH_AUTH_MODE=user_oauth зарезервирован на будущее и пока не реализован."
-            )
-        if self.auth_mode not in {"none", "application_token"}:
+            if not self.user_access_token:
+                raise HHConfigurationError(
+                    "HH_AUTH_MODE=user_oauth, но HH_USER_ACCESS_TOKEN пуст. "
+                    "Добавьте OAuth токен пользователя в .env."
+                )
+            return
+        if self.auth_mode not in {"none", "application_token", "user_oauth"}:
             raise HHConfigurationError(
                 f"Неизвестный HH_AUTH_MODE={self.auth_mode!r}. "
                 "Допустимы none, application_token и user_oauth."
@@ -204,7 +253,8 @@ class HHClient:
             and self.budget["total"] >= self.budget["max_requests"]
         ):
             raise HHBudgetExceeded(
-                f"Request budget exceeded ({self.budget['total']}/{self.budget['max_requests']} total requests)."
+                "Request budget exceeded "
+                f"({self.budget['total']}/{self.budget['max_requests']} total requests)."
             )
         if (
             request_type == "detail"
@@ -212,7 +262,8 @@ class HHClient:
             and self.budget["detail"] >= self.budget["max_details"]
         ):
             raise HHBudgetExceeded(
-                f"Detail request budget exceeded ({self.budget['detail']}/{self.budget['max_details']} detail requests)."
+                "Detail request budget exceeded "
+                f"({self.budget['detail']}/{self.budget['max_details']} detail requests)."
             )
 
         # --- pre-request delay ---
@@ -277,11 +328,16 @@ class HHClient:
                         path=path,
                     )
                 if response.status_code == 403:
+                    token_hint = (
+                        "HH_USER_ACCESS_TOKEN указан в .env, а HH_AUTH_MODE=user_oauth"
+                        if self.auth_mode == "user_oauth"
+                        else "HH_APP_ACCESS_TOKEN указан в .env, а HH_AUTH_MODE=application_token"
+                    )
                     raise HHAuthorizationRequired(
                         "HH API вернул 403. Для доступа к этому методу может "
-                        "требоваться токен приложения. Проверьте, что заявка "
-                        "одобрена, HH_APP_ACCESS_TOKEN указан в .env, а "
-                        "HH_AUTH_MODE=application_token. "
+                        "требоваться авторизованный токен. Проверьте, что доступ "
+                        "к приложению одобрен и что "
+                        f"{token_hint}. "
                         f"Ответ API: {detail}",
                         status_code=403,
                         body=body,

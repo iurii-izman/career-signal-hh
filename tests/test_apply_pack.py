@@ -6,13 +6,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-import yaml
-
 from src.commands.apply_pack import (
     _build_fit_summary,
     _generate_md,
-    _load_templates,
     _resolve_template,
 )
 from src.models import Vacancy

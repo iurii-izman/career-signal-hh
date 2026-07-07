@@ -7,7 +7,6 @@ from pathlib import Path
 
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm
 from rich.table import Table
 
 from ..search_presets import get_preset, list_presets, validate_preset

@@ -32,6 +32,15 @@ def test_application_token_adds_bearer_header() -> None:
     assert client.session.headers["Authorization"] == "Bearer secret-token-value"
 
 
+def test_user_oauth_adds_bearer_header() -> None:
+    client = HHClient(
+        "TestClient/1.0",
+        auth_mode="user_oauth",
+        user_access_token="user-secret-token",
+    )
+    assert client.session.headers["Authorization"] == "Bearer user-secret-token"
+
+
 def test_403_has_actionable_message(monkeypatch: pytest.MonkeyPatch) -> None:
     client = HHClient("TestClient/1.0", auth_mode="none")
     monkeypatch.setattr(

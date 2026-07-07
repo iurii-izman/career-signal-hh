@@ -386,6 +386,41 @@ def test_dry_run_smoke_shows_estimate(
     assert "No API requests were made" in rendered
 
 
+def test_dry_run_loads_env_auth_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dry-run estimate should reflect auth mode loaded from .env."""
+    _make_minimal_profiles(tmp_path, monkeypatch)
+    (tmp_path / ".env").write_text(
+        "HH_AUTH_MODE=application_token\nHH_APP_ACCESS_TOKEN=test-token\n",
+        encoding="utf-8",
+    )
+    output = _record_console(monkeypatch)
+
+    result = search_cmds.command_search(
+        Namespace(
+            mode="smoke",
+            max_pages=None,
+            per_page=None,
+            profile=None,
+            dry_run=True,
+            force_details=False,
+            verbose=False,
+            yes=False,
+            adhoc=False,
+            preset=None,
+            include=None,
+            exclude=None,
+            remote_only=None,
+        )
+    )
+
+    rendered = output.export_text()
+    assert result == 0
+    assert "Auth mode" in rendered
+    assert "application_token" in rendered
+
+
 # ---------------------------------------------------------------------------
 # 429 handling tests
 # ---------------------------------------------------------------------------

@@ -21,8 +21,6 @@ def export_html(
     new_24h = sum(1 for row in rows if row.get("first_seen_at", "") >= _day_ago_iso())
     remote = sum("remote" in json_loads(row.get("work_format_flags_json"), []) for row in rows)
     with_salary_count = sum(1 for row in rows if row.get("salary_from") or row.get("salary_to"))
-    ai = sum((row.get("ai_automation_score") or 0) >= 15 for row in rows)
-    bitrix = sum((row.get("bitrix_1c_score") or 0) >= 15 for row in rows)
     cards = []
     decisions_set: set[str] = set()
     profiles_set: set[str] = set()

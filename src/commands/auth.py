@@ -15,10 +15,11 @@ console = Console()
 def command_auth_check(_: argparse.Namespace) -> int:
     load_dotenv()
     client = HHClient()
-    token_present = bool(client.app_access_token)
+    token_present = getattr(client, "active_token_present", bool(client.app_access_token))
+    token_env_name = getattr(client, "active_token_env_name", "HH_APP_ACCESS_TOKEN")
     console.print(f"HH_AUTH_MODE: [bold]{client.auth_mode}[/bold]")
     console.print(
-        "HH_APP_ACCESS_TOKEN: "
+        f"{token_env_name}: "
         + ("[green]указан[/green]" if token_present else "[yellow]не указан[/yellow]")
     )
     console.print(f"HH_USER_AGENT: {client.user_agent}")

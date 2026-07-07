@@ -67,6 +67,27 @@ def test_health_does_not_print_token(tmp_path: Path, monkeypatch, capsys) -> Non
     )
 
 
+def test_health_does_not_print_user_oauth_token(tmp_path: Path, monkeypatch, capsys) -> None:
+    """health must never print the actual OAuth token value."""
+    db_path = str(tmp_path / "data" / "test_health.sqlite")
+    _make_empty_storage(db_path)
+
+    monkeypatch.setenv("DB_PATH", db_path)
+    monkeypatch.setenv("HH_AUTH_MODE", "user_oauth")
+    monkeypatch.setenv("HH_USER_ACCESS_TOKEN", "USER_SECRET_TOKEN_VALUE_12345")
+    monkeypatch.setattr("src.commands.health.load_dotenv", lambda *a, **kw: None)
+
+    from argparse import Namespace
+
+    from src.commands.health import command_health
+
+    result = command_health(Namespace())
+    captured = capsys.readouterr().out
+    assert "USER_SECRET_TOKEN_VALUE_12345" not in captured
+    assert result in (0, 1)
+    assert "token=set" in captured or "set" in captured.lower()
+
+
 # ── Health exit code 1 on critical failures ──────────────────────────────────
 
 

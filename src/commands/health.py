@@ -170,12 +170,18 @@ def command_health(_: argparse.Namespace) -> int:
         add(f"Config: {filename}", s, t)
 
     # ── .env in application_token mode ───────────────────────────────────
-    auth_mode = os.getenv("HH_AUTH_MODE", "none").strip().lower()
-    token = os.getenv("HH_APP_ACCESS_TOKEN", "").strip()
-    if auth_mode == "application_token" and not token:
-        add("Auth token", "FAIL", "application_token mode but HH_APP_ACCESS_TOKEN missing")
+    from ..hh_client import HHClient
+
+    client = HHClient()
+    if client.auth_mode in {"application_token", "user_oauth"} and not client.active_token_present:
+        add(
+            "Auth token",
+            "FAIL",
+            f"{client.auth_mode} mode but {client.active_token_env_name} missing",
+        )
     else:
-        add("Auth token", "OK", f"mode={auth_mode}, token={'set' if token else 'not set'}")
+        token_status = "set" if client.active_token_present else "not set"
+        add("Auth token", "OK", f"mode={client.auth_mode}, token={token_status}")
 
     # ── Latest backup age ────────────────────────────────────────────────
     backup_age = _latest_file_age("backups/vacancies_*.sqlite")

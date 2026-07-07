@@ -36,8 +36,10 @@ def test_settings_endpoint_masks_token() -> None:
         body = json.loads(resp.body)
         assert body["ok"] is True
         token_val = body["data"]["env"]["HH_APP_ACCESS_TOKEN"]
+        oauth_token_val = body["data"]["env"]["HH_USER_ACCESS_TOKEN"]
         # Token must not be revealed fully
         assert "not set" in token_val or "*" in token_val or len(token_val) < 30
+        assert "not set" in oauth_token_val or "*" in oauth_token_val or len(oauth_token_val) < 30
         # If token is set, it must have mask characters
         real_token = __import__("os").getenv("HH_APP_ACCESS_TOKEN", "")
         if real_token and len(real_token) > 8:
@@ -117,6 +119,22 @@ def test_token_saved_but_never_returned(monkeypatch, tmp_path: Path) -> None:
     # File must contain the new token
     content = test_env.read_text(encoding="utf-8")
     assert "NEW_TOKEN_12345" in content
+
+
+def test_user_oauth_token_saved(monkeypatch, tmp_path: Path) -> None:
+    """OAuth token replacement should be saved safely."""
+    test_env = tmp_path / ".env"
+    test_env.write_text("HH_USER_ACCESS_TOKEN=OLD_USER_TOKEN\n", encoding="utf-8")
+    monkeypatch.setattr("src.services.settings_service.ENV_PATH", str(test_env))
+
+    from src.services.settings_service import save_env_settings
+
+    result = save_env_settings({"HH_USER_ACCESS_TOKEN": "NEW_USER_TOKEN_12345"})
+    assert result["ok"] is True
+    assert "NEW_USER_TOKEN_12345" not in result.get("message", "")
+
+    content = test_env.read_text(encoding="utf-8")
+    assert "NEW_USER_TOKEN_12345" in content
 
 
 # ── Candidate profile ──────────────────────────────────────────────────

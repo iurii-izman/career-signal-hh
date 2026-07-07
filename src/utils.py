@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime
 from typing import Any
@@ -64,3 +65,15 @@ def json_loads(value: str | None, default: Any = None) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return default
+
+
+def redact_secrets(value: str | None) -> str | None:
+    """Replace known token values from text with a fixed placeholder."""
+    if value is None:
+        return None
+    text = value
+    for env_name in ("HH_APP_ACCESS_TOKEN", "HH_USER_ACCESS_TOKEN"):
+        token = os.getenv(env_name, "").strip()
+        if token:
+            text = text.replace(token, "[REDACTED]")
+    return text

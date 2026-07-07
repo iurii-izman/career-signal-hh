@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from ..hh_client import HHClient
 
 
 def command_ui(args: argparse.Namespace) -> int:
@@ -38,8 +39,8 @@ def command_ui(args: argparse.Namespace) -> int:
     load_dotenv()
 
     # Suppress token display
-    token = os.getenv("HH_APP_ACCESS_TOKEN", "")
-    token_status = "set" if token else "not set"
+    client = HHClient()
+    token_status = "set" if client.active_token_present else "not set"
 
     url = f"http://{host}:{port}"
     if host == "0.0.0.0":
@@ -48,6 +49,7 @@ def command_ui(args: argparse.Namespace) -> int:
     print("\nCareerSignal HH Local UI")
     print("  Version:  0.6.0")
     print(f"  URL:      {url}")
+    print(f"  Auth:     {client.auth_mode}")
     print(f"  Token:    {token_status}")
     print(f"  Bind:     {host}:{port}")
     print()

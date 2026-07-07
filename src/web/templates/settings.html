@@ -77,13 +77,12 @@
     candidateData = r.data.candidate || {};
 
     // Env fields
-    var envKeys = ['HH_AUTH_MODE','HH_APP_ACCESS_TOKEN','HH_USER_AGENT','DB_PATH','HH_DELAY_MIN_SECONDS','HH_DELAY_MAX_SECONDS','HH_COOLDOWN_ON_429_SECONDS','HH_STOP_ON_429','HH_DETAIL_REFRESH_DAYS'];
-    var envLabels = {HH_APP_ACCESS_TOKEN:'Token (masked, fill to replace)', HH_AUTH_MODE:'Auth Mode', HH_USER_AGENT:'User Agent', DB_PATH:'DB Path', HH_DELAY_MIN_SECONDS:'Delay Min (s)', HH_DELAY_MAX_SECONDS:'Delay Max (s)', HH_COOLDOWN_ON_429_SECONDS:'Cooldown 429 (s)', HH_STOP_ON_429:'Stop on 429', HH_DETAIL_REFRESH_DAYS:'Detail Refresh Days'};
+    var envKeys = ['HH_AUTH_MODE','HH_APP_ACCESS_TOKEN','HH_USER_ACCESS_TOKEN','HH_USER_AGENT','DB_PATH','HH_DELAY_MIN_SECONDS','HH_DELAY_MAX_SECONDS','HH_COOLDOWN_ON_429_SECONDS','HH_STOP_ON_429','HH_DETAIL_REFRESH_DAYS'];
+    var envLabels = {HH_APP_ACCESS_TOKEN:'App Token (masked, fill to replace)', HH_USER_ACCESS_TOKEN:'User OAuth Token (masked, fill to replace)', HH_AUTH_MODE:'Auth Mode', HH_USER_AGENT:'User Agent', DB_PATH:'DB Path', HH_DELAY_MIN_SECONDS:'Delay Min (s)', HH_DELAY_MAX_SECONDS:'Delay Max (s)', HH_COOLDOWN_ON_429_SECONDS:'Cooldown 429 (s)', HH_STOP_ON_429:'Stop on 429', HH_DETAIL_REFRESH_DAYS:'Detail Refresh Days'};
     var html = '';
     envKeys.forEach(function(k) {
-      var isToken = k === 'HH_APP_ACCESS_TOKEN';
+      var isToken = (k === 'HH_APP_ACCESS_TOKEN' || k === 'HH_USER_ACCESS_TOKEN');
       var val = envData[k] || '';
-      var readonly = (k === 'HH_APP_ACCESS_TOKEN') ? '' : '';
       html += '<div class="settings-card"><label>' + (envLabels[k]||k) + '</label>';
       if (isToken) {
         html += '<input id="env-'+k+'" placeholder="Leave blank to keep current" style="width:100%"><div style="font-size:11px;color:var(--muted);margin-top:4px">Current: ' + esc(val) + '</div>';
@@ -129,8 +128,10 @@
       var el = document.getElementById('env-'+k);
       if (el) updates[k] = el.value;
     });
-    var tokenEl = document.getElementById('env-HH_APP_ACCESS_TOKEN');
-    if (tokenEl && tokenEl.value.trim()) updates['HH_APP_ACCESS_TOKEN'] = tokenEl.value.trim();
+    ['HH_APP_ACCESS_TOKEN','HH_USER_ACCESS_TOKEN'].forEach(function(k) {
+      var tokenEl = document.getElementById('env-' + k);
+      if (tokenEl && tokenEl.value.trim()) updates[k] = tokenEl.value.trim();
+    });
     apiPost('/api/settings/env', updates).then(function(r) {
       var el = document.getElementById('env-msg');
       el.textContent = r.message;

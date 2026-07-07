@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+
+from ..utils import redact_secrets
 
 # ── Job model ─────────────────────────────────────────────────────────
 
@@ -83,22 +84,12 @@ class Job:
     def sanitized_dict(self) -> dict[str, Any]:
         """Return dict with token values stripped from logs and error."""
         data = self.to_dict()
-        token = os.getenv("HH_APP_ACCESS_TOKEN", "")
-        if token:
-            # Sanitize log lines
-            sanitized_logs = []
-            for entry in data.get("log_lines", []):
-                msg = entry.get("msg", "")
-                if token in msg:
-                    msg = msg.replace(token, "[REDACTED]")
-                sanitized_logs.append({**entry, "msg": msg})
-            data["log_lines"] = sanitized_logs
-            # Sanitize error
-            if data.get("error") and token in data["error"]:
-                data["error"] = data["error"].replace(token, "[REDACTED]")
-            # Sanitize message
-            if data.get("message") and token in data["message"]:
-                data["message"] = data["message"].replace(token, "[REDACTED]")
+        sanitized_logs = []
+        for entry in data.get("log_lines", []):
+            sanitized_logs.append({**entry, "msg": redact_secrets(entry.get("msg", "")) or ""})
+        data["log_lines"] = sanitized_logs
+        data["error"] = redact_secrets(data.get("error"))
+        data["message"] = redact_secrets(data.get("message"))
         return data
 
 

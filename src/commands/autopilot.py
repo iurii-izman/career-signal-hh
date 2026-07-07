@@ -20,10 +20,12 @@ def _check_auth_light() -> tuple[bool, str]:
     ok = True
     msgs: list[str] = []
     msgs.append(f"Auth mode: {client.auth_mode}")
-    token_ok = bool(client.app_access_token)
-    msgs.append(f"Token: {'present' if token_ok else 'MISSING'}")
-    if client.auth_mode == "application_token" and not token_ok:
-        msgs.append("WARNING: application_token mode but no token set")
+    token_ok = client.active_token_present
+    msgs.append(f"{client.active_token_env_name}: {'present' if token_ok else 'MISSING'}")
+    if client.auth_mode in {"application_token", "user_oauth"} and not token_ok:
+        msgs.append(
+            f"WARNING: {client.auth_mode} mode but {client.active_token_env_name} is not set"
+        )
         ok = False
     return ok, "\n".join(msgs)
 

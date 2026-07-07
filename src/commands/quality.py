@@ -229,7 +229,7 @@ h1{{color:#67e8f9}} table{{width:100%;border-collapse:collapse}} th,td{{padding:
 </body></html>"""
     try:
         (out / "data_quality_report.html").write_text(html, encoding="utf-8")
-        console.print(f"[green]data_quality_report.html[/green]")
+        console.print("[green]data_quality_report.html[/green]")
     except OSError as exc:
         console.print(f"[red]Failed to write data_quality_report.html: {exc}[/red]")
     return 0

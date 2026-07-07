@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 ENV_PATH = ".env"
 CANDIDATE_PATH = "config/candidate.yaml"
@@ -25,7 +26,7 @@ SAFE_ENV_KEYS = [
     "HH_DETAIL_REFRESH_DAYS",
     "DB_PATH",
 ]
-TOKEN_KEY = "HH_APP_ACCESS_TOKEN"
+TOKEN_KEYS = ["HH_APP_ACCESS_TOKEN", "HH_USER_ACCESS_TOKEN"]
 
 
 def _backup_env() -> Path:
@@ -47,13 +48,13 @@ def _backup_env() -> Path:
 
 def get_settings() -> dict[str, Any]:
     """Return all settings, never exposing full token."""
-    token = os.getenv(TOKEN_KEY, "")
-    masked = _mask_token(token)
+    load_dotenv()
+    masked_tokens = {key: _mask_token(os.getenv(key, "")) for key in TOKEN_KEYS}
 
     return {
         "env": {
             "HH_AUTH_MODE": os.getenv("HH_AUTH_MODE", "none"),
-            "HH_APP_ACCESS_TOKEN": masked,
+            **masked_tokens,
             "HH_USER_AGENT": os.getenv("HH_USER_AGENT", "CareerSignalHH/0.1"),
             "DB_PATH": os.getenv("DB_PATH", "data/vacancies.sqlite"),
             "HH_DELAY_MIN_SECONDS": os.getenv("HH_DELAY_MIN_SECONDS", "0.7"),
@@ -110,6 +111,7 @@ def _load_search_modes() -> dict[str, Any]:
 
 def _get_health_snapshot() -> dict[str, Any]:
     """Quick health status without running full check."""
+    load_dotenv()
     db_path = os.getenv("DB_PATH", "data/vacancies.sqlite")
     db_exists = Path(db_path).exists()
     db_size = Path(db_path).stat().st_size if db_exists else 0
@@ -134,10 +136,10 @@ def save_env_settings(updates: dict[str, str]) -> dict[str, Any]:
     safe_updates = {}
 
     for key, value in updates.items():
-        if key == TOKEN_KEY:
+        if key in TOKEN_KEYS:
             # Token: only save if non-empty string provided
             if value and value.strip():
-                safe_updates[TOKEN_KEY] = value.strip()
+                safe_updates[key] = value.strip()
             continue
         if key in SAFE_ENV_KEYS:
             safe_updates[key] = str(value).strip()
@@ -171,7 +173,7 @@ def save_env_settings(updates: dict[str, str]) -> dict[str, Any]:
         "ok": True,
         "message": (
             f"Saved {len(safe_updates)} setting(s). "
-            f"Token {'updated' if TOKEN_KEY in safe_updates else 'unchanged'}."
+            f"Tokens {'updated' if any(k in safe_updates for k in TOKEN_KEYS) else 'unchanged'}."
         ),
         "errors": [],
     }
@@ -246,6 +248,7 @@ def save_candidate_profile(data: dict[str, Any]) -> dict[str, Any]:
 
 def test_auth() -> dict[str, Any]:
     """Test HH API auth status."""
+    load_dotenv()
     try:
         from ..hh_client import HHClient
 

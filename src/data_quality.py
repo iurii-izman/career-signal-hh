@@ -82,7 +82,6 @@ def find_duplicates(
     Returns list of clusters, each with cluster_id, vacancies, reason, score.
     """
     clusters: list[dict] = []
-    seen: set[str] = set()
     used: set[str] = set()
 
     # Group by URL (exact)

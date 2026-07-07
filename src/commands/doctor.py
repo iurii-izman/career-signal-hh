@@ -75,19 +75,19 @@ def command_doctor(_: argparse.Namespace) -> int:
         except OSError as exc:
             add(f"Directory: {dirname}", "FAIL", str(exc))
 
-    auth_mode = os.getenv("HH_AUTH_MODE", "none").strip().lower()
+    client = HHClient()
+    auth_mode = client.auth_mode
     valid_modes = {"none", "application_token", "user_oauth"}
     add(
         "HH_AUTH_MODE",
         "OK" if auth_mode in valid_modes else "FAIL",
         auth_mode,
     )
-    token_present = bool(os.getenv("HH_APP_ACCESS_TOKEN", "").strip())
-    if auth_mode == "application_token":
+    if auth_mode in {"application_token", "user_oauth"}:
         add(
-            "HH_APP_ACCESS_TOKEN",
-            "OK" if token_present else "WARN",
-            "Указан" if token_present else "Не указан",
+            client.active_token_env_name,
+            "OK" if client.active_token_present else "WARN",
+            "Указан" if client.active_token_present else "Не указан",
         )
     else:
         add("HH_APP_ACCESS_TOKEN", "OK", "Не требуется для текущего режима")
@@ -121,7 +121,6 @@ def command_doctor(_: argparse.Namespace) -> int:
     except ImportError as exc:
         add("Core imports", "FAIL", str(exc))
 
-    client = HHClient()
     add(
         "Rate limiting",
         "OK",

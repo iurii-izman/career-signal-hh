@@ -172,11 +172,6 @@ def _set_quality_flags(
     """Set quality flags based on match characteristics."""
     title_matches = [kw for kw in matched if kw.field == "title"]
     skills_matches = [kw for kw in matched if kw.field == "skills"]
-    desc_only = [
-        kw
-        for kw in matched
-        if kw.field == "description" and kw.field != "title" and kw.field != "skills"
-    ]
 
     if title_matches:
         quality_flags.append("title_match")

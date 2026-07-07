@@ -8,15 +8,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 from ..storage import Storage
 
 
 def _get_storage() -> Storage:
+    load_dotenv()
     return Storage(os.getenv("DB_PATH", "data/vacancies.sqlite"))
 
 
 def get_dashboard_state() -> dict[str, Any]:
     """Return dashboard snapshot with action flags, follow-ups, reports."""
+    load_dotenv()
     storage = _get_storage()
     stats = storage.stats()
 
@@ -175,6 +179,7 @@ def get_health_summary() -> list[dict[str, str]]:
     """Return health check results."""
     from .. import __version__
 
+    load_dotenv()
     checks: list[dict[str, str]] = []
 
     def add(label: str, status: str, detail: str) -> None:
@@ -237,12 +242,17 @@ def get_health_summary() -> list[dict[str, str]]:
             s, d = ("OK", "exists") if path.is_file() else ("WARN", "missing (optional)")
         add(f"Config: {filename}", s, d)
 
-    auth_mode = os.getenv("HH_AUTH_MODE", "none").strip().lower()
-    token = os.getenv("HH_APP_ACCESS_TOKEN", "").strip()
-    if auth_mode == "application_token" and not token:
-        add("Auth token", "FAIL", "application_token mode but token missing")
+    from ..hh_client import HHClient
+
+    client = HHClient()
+    if client.auth_mode in {"application_token", "user_oauth"} and not client.active_token_present:
+        add("Auth token", "FAIL", f"{client.auth_mode} mode but token missing")
     else:
-        add("Auth token", "OK", f"mode={auth_mode}, token={'set' if token else 'not set'}")
+        add(
+            "Auth token",
+            "OK",
+            f"mode={client.auth_mode}, token={'set' if client.active_token_present else 'not set'}",
+        )
 
     backup_age = _latest_file_age("backups/vacancies_*.sqlite")
     if backup_age is None:
@@ -264,6 +274,7 @@ def get_health_summary() -> list[dict[str, str]]:
 
 
 def get_recent_runs(limit: int = 5) -> list[dict[str, Any]]:
+    load_dotenv()
     storage = _get_storage()
     try:
         with storage.connect() as conn:

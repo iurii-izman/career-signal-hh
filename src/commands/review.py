@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
+from typing import Any
 
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from ..storage import REVIEW_STATUSES, Storage
+from ..storage import Storage
 
 console = Console()
 
@@ -156,7 +157,7 @@ def _print_queue_table(rows: list[dict[str, Any]], title: str = "Review Queue") 
     if rows:
         ids = " ".join(row["id"] for row in rows[:5])
         console.print(
-            f"\n[dim]Copy: review set ID --status interesting | review apply ID --date today[/dim]"
+            "\n[dim]Copy: review set ID --status interesting | review apply ID --date today[/dim]"
         )
         console.print(f"[dim]Top 5 IDs: {ids}[/dim]")
 

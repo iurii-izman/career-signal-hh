@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,7 @@ from ..services import (
     settings_service,
     vacancy_service,
 )
+from ..utils import redact_secrets
 from .jobs import JobManager
 from .schemas import (
     ActionRequest,
@@ -126,11 +126,8 @@ async def api_health() -> JSONResponse:
     try:
         checks = app_service.get_health_summary()
         sanitized = []
-        token = os.getenv("HH_APP_ACCESS_TOKEN", "")
         for c in checks:
-            detail = c.get("detail", "")
-            if token and token in detail:
-                detail = detail.replace(token, "[REDACTED]")
+            detail = redact_secrets(c.get("detail", "")) or ""
             sanitized.append({**c, "detail": detail})
         return JSONResponse(content={"ok": True, "data": sanitized})
     except Exception as exc:
@@ -223,10 +220,7 @@ async def api_vacancy_get(vacancy_id: str) -> JSONResponse:
                 content={"ok": False, "message": "Vacancy not found", "data": None},
                 status_code=404,
             )
-        # Sanitize token
-        token = os.getenv("HH_APP_ACCESS_TOKEN", "")
-        if token and v.get("raw_json") and token in v["raw_json"]:
-            v["raw_json"] = v["raw_json"].replace(token, "[REDACTED]")
+        v["raw_json"] = redact_secrets(v.get("raw_json"))
         return JSONResponse(content={"ok": True, "data": v})
     except Exception as exc:
         return JSONResponse(
@@ -357,9 +351,7 @@ async def api_vacancy_full(vacancy_id: str) -> JSONResponse:
                 content={"ok": False, "message": "Vacancy not found", "data": None},
                 status_code=404,
             )
-        token = os.getenv("HH_APP_ACCESS_TOKEN", "")
-        if token and v.get("raw_json") and token in v["raw_json"]:
-            v["raw_json"] = v["raw_json"].replace(token, "[REDACTED]")
+        v["raw_json"] = redact_secrets(v.get("raw_json"))
         return JSONResponse(content={"ok": True, "data": v})
     except Exception as exc:
         return JSONResponse(

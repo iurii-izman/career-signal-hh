@@ -275,6 +275,25 @@ def test_token_not_in_job_logs(monkeypatch) -> None:
     assert "[REDACTED]" in logs_text
 
 
+def test_user_oauth_token_not_in_job_logs(monkeypatch) -> None:
+    """Job sanitized_dict must not leak OAuth token in logs."""
+    monkeypatch.setenv("HH_USER_ACCESS_TOKEN", "USER_SECRET_TOKEN_XYZ")
+
+    from src.web.jobs import Job
+
+    job = Job("test")
+    job.add_log("Using oauth token: USER_SECRET_TOKEN_XYZ")
+    job.error = "Failed with USER_SECRET_TOKEN_XYZ"
+    job.message = "Token is USER_SECRET_TOKEN_XYZ"
+
+    data = job.sanitized_dict()
+
+    logs_text = " ".join(e["msg"] for e in data["log_lines"])
+    assert "USER_SECRET_TOKEN_XYZ" not in logs_text
+    assert "USER_SECRET_TOKEN_XYZ" not in (data.get("error") or "")
+    assert "USER_SECRET_TOKEN_XYZ" not in (data.get("message") or "")
+
+
 def test_deep_mode_rejected() -> None:
     """Autopilot UI endpoint must reject deep mode."""
     import asyncio

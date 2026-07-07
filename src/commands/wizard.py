@@ -13,7 +13,6 @@ All subcommands support --plan to print the plan without executing.
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -205,14 +204,19 @@ def command_wizard_first_run(args: argparse.Namespace) -> int:
         return 1
 
     # 2. Check auth
-    auth_mode = os.getenv("HH_AUTH_MODE", "none").strip().lower()
-    token = os.getenv("HH_APP_ACCESS_TOKEN", "").strip()
+    from ..hh_client import HHClient
+
+    client = HHClient()
+    auth_mode = client.auth_mode
     console.print(f"  [green]✓[/green] HH_AUTH_MODE = {auth_mode}")
-    if auth_mode == "application_token":
-        if token:
+    if auth_mode in {"application_token", "user_oauth"}:
+        if client.active_token_present:
             console.print("  [green]✓[/green] Token is set")
         else:
-            console.print("  [red]✗[/red] application_token mode but HH_APP_ACCESS_TOKEN is empty")
+            console.print(
+                "  [red]✗[/red] "
+                f"{auth_mode} mode but {client.active_token_env_name} is empty"
+            )
             return 1
     else:
         console.print("  [dim]  Token not required for current mode[/dim]")

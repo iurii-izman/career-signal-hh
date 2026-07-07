@@ -113,6 +113,28 @@ def test_health_endpoint_no_token_leak(empty_db: str, monkeypatch) -> None:
     asyncio.run(_run())
 
 
+def test_health_endpoint_no_user_oauth_token_leak(empty_db: str, monkeypatch) -> None:
+    """Health endpoint must not reveal the OAuth token either."""
+    monkeypatch.setenv("HH_USER_ACCESS_TOKEN", "USER_SECRET_TOKEN_12345")
+    monkeypatch.setenv("HH_AUTH_MODE", "user_oauth")
+    _init_db(empty_db)
+
+    import asyncio
+
+    from src.web.routes import api_health
+
+    async def _run():
+        resp = await api_health()
+        import json
+
+        body = json.loads(resp.body)
+        body_str = json.dumps(body)
+        assert "USER_SECRET_TOKEN_12345" not in body_str
+        assert "set" in body_str.lower() or "token" in body_str.lower()
+
+    asyncio.run(_run())
+
+
 # ── Host safety rejects non-localhost without --allow-lan ────────────────
 
 
