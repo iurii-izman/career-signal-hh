@@ -327,7 +327,14 @@ async def api_vacancy_apply_pack(vacancy_id: str) -> JSONResponse:
     """Generate apply pack for a single vacancy (synchronous — usually fast)."""
     try:
         result = review_service.generate_apply_pack_for(vacancy_id)
-        status_code = 200 if result["ok"] else 500
+        if result["ok"]:
+            status_code = 200
+        elif result.get("error_type") == "not_found":
+            status_code = 404
+        elif result.get("error_type") == "validation":
+            status_code = 422
+        else:
+            status_code = 500
         return JSONResponse(content=result, status_code=status_code)
     except Exception as exc:
         return JSONResponse(
@@ -385,7 +392,14 @@ async def api_vacancy_apply_pack_preview(
     """Generate apply pack and return preview info."""
     try:
         result = vacancy_service.generate_apply_pack_preview(vacancy_id, lang, style)
-        status_code = 200 if result["ok"] else 500
+        if result["ok"]:
+            status_code = 200
+        elif result.get("error_type") == "not_found":
+            status_code = 404
+        elif result.get("error_type") == "validation":
+            status_code = 422
+        else:
+            status_code = 500
         return JSONResponse(content=result, status_code=status_code)
     except Exception as exc:
         return JSONResponse(

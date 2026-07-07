@@ -77,6 +77,7 @@ def build_apply_pack_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--template", help="Override template (e.g. ai_rag_remote)")
     p.add_argument("--save-review", action="store_true")
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--diagnostics", action="store_true", help="Print letter validator diagnostics")
     p.set_defaults(func=apply_pack.command_apply_pack)
 
 

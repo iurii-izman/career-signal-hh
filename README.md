@@ -655,10 +655,16 @@ parameters. Их допустимые значения следует сверя
 ## Apply Pack: подготовка к ручному отклику
 
 Генерирует Markdown и HTML файлы с полным разбором вакансии,
-fit analysis, рисками, чеклистом и cover letter по шаблону.
+fit analysis, рисками, чеклистом и cover letter через rule-based letter engine.
 **Не отправляет отклики.** Только готовит материалы.
 
-Шаблоны: `config/apply_templates.yaml` — preset-specific,
+Letter engine:
+- собирает письмо из vacancy-specific сигналов, matched keywords и candidate profile;
+- добавляет AI case только для AI/LLM/n8n/Make вакансий;
+- прогоняет deterministic validator до export/save-review;
+- слабые письма не экспортируются и не сохраняются в review.
+
+Шаблоны: `config/apply_templates.yaml` — preset-specific blueprints
 с поддержкой short/medium/detailed стилей и ru/en языков.
 Fallback: preset → default → builtin.
 
@@ -677,6 +683,9 @@ python -m src.main apply-pack --preset ai_rag_remote --limit 5
 # С сохранением черновика в review
 python -m src.main apply-pack 123456789 --save-review
 python -m src.main apply-pack 123456789 --save-review --overwrite
+
+# Показать validator diagnostics
+python -m src.main apply-pack 123456789 --diagnostics
 ```
 
 Секции apply-pack:
@@ -696,6 +705,13 @@ python -m src.main review draft 123456789
 # Очистить черновик
 python -m src.main review clear-draft 123456789 --yes
 ```
+
+Validator gate для письма:
+- обязателен `company` и `vacancy title` в тексте;
+- письмо должно быть коротким и стиль-зависимым по длине;
+- минимум 2 vacancy anchors: matched keywords / key skills / title terms;
+- запрещены generic фразы, markdown bullets и banned terms из `candidate.yaml`;
+- AI Lead Intake блок обязателен только для AI-trigger вакансий и запрещён вне их.
 
 Файлы создаются в `exports/apply_packs/<id>_<slug>.md` и `.html`.
 При `--top`/`--limit` дополнительно создаётся `index.html`.

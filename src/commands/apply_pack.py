@@ -9,6 +9,7 @@ import yaml
 from rich.console import Console
 
 from ..config import _services
+from ..letter_engine import build_cover_letter
 from ..utils import json_loads
 
 console = Console()
@@ -142,7 +143,7 @@ def _build_fit_summary(details: dict | None, vacancy: dict, lang: str) -> dict[s
     if risks:
         for r in risks[:3]:
             concerns.append(str(r))
-    if "remote" not in work and vacancy.get("schedule_name", "").lower() not in (
+    if "remote" not in work and (vacancy.get("schedule_name") or "").lower() not in (
         "remote",
         "удаленная работа",
     ):
@@ -187,6 +188,16 @@ def _generate_md(
     style: str = "medium",
     template_name: str | None = None,
 ) -> str:
+    return _generate_pack_data(vacancy, details, lang, style, template_name)["md_content"]
+
+
+def _generate_pack_data(
+    vacancy: dict[str, Any],
+    details: dict[str, Any] | None,
+    lang: str,
+    style: str = "medium",
+    template_name: str | None = None,
+) -> dict[str, Any]:
     name = vacancy.get("name", "?")
     company = vacancy.get("employer_name", "?")
     area = vacancy.get("area_name", "?")
@@ -224,31 +235,26 @@ def _generate_md(
     # Fit summary
     fit = _build_fit_summary(details, vacancy, lang)
 
-    # Keywords
-    top_kw = ", ".join(kw.get("keyword", "") for kw in matched[:5] if kw.get("keyword")) or "-"
-
     # Resolve cover letter template
     tmpl = _resolve_template(template_name or preset, lang, style)
-    cover_letter = tmpl.format(
+    letter = build_cover_letter(
+        vacancy,
+        details,
+        lang=lang,
+        style=style,
+        template=tmpl,
         candidate_name=candidate_name,
-        vacancy_title=name,
-        company=company,
-        top_keywords=top_kw,
         candidate_summary=summary,
+        location=location,
+        availability=availability,
         github=gh or "",
         linkedin=li or "",
-        availability=availability,
-        location=location,
-        decision=decision,
-        total_score=str(total_score),
-        risks_summary=", ".join(str(r) for r in risks[:3]) if risks else "none",
-        fit_reasons=fit["reasons"],
-        salary=salary,
     )
+    cover_letter = letter["text"]
 
     is_ru = lang == "ru"
 
-    return f"""# Apply Pack: {name}
+    md_content = f"""# Apply Pack: {name}
 
 ## Vacancy
 - **Company:** {company}
@@ -306,6 +312,12 @@ def _generate_md(
 
 {cover_letter}
 """
+    return {
+        "md_content": md_content,
+        "cover_letter": cover_letter,
+        "letter_validation": letter["validation"],
+        "letter_meta": letter["meta"],
+    }
 
 
 def _risk_bullets(excluded: list[dict], risks: list[str], vacancy: dict, lang: str) -> str:
@@ -376,19 +388,10 @@ ul{{padding-left:20px}} li{{margin:4px 0}} a{{color:#67e8f9}}
 # ── File I/O ────────────────────────────────────────────────────────────────
 
 
-def _write_pack(
-    vacancy: dict,
-    details: dict | None,
-    lang: str,
-    fmt: str,
-    out_dir: Path,
-    style: str,
-    template_name: str | None,
-) -> Path:
+def _write_pack(vacancy: dict, md_content: str, fmt: str, out_dir: Path) -> Path:
     name = vacancy.get("name", "vacancy")
     vid = vacancy.get("id", "")
     slug = _slug(name)
-    md_content = _generate_md(vacancy, details, lang, style, template_name)
 
     paths = []
     if fmt in ("md", "both"):
@@ -410,6 +413,66 @@ def _save_review(storage, vacancy_id: str, md_content: str, overwrite: bool) -> 
         return False
     storage.upsert_review(vacancy_id, cover_letter_draft=md_content)
     return True
+
+
+def _print_letter_diagnostics(vacancy_id: str, validation: dict[str, Any]) -> None:
+    metrics = validation.get("metrics", {})
+    anchors = ", ".join(metrics.get("anchor_hits", [])) or "-"
+    reasons = ", ".join(validation.get("reasons", [])) or "ok"
+    color = "green" if validation.get("ok", False) else "red"
+    status = "passed" if validation.get("ok", False) else "rejected"
+    console.print(
+        f"[{color}]{vacancy_id}: letter gate {status}[/{color}] "
+        f"(words={metrics.get('word_count', 0)}, anchors={anchors}, reasons={reasons})"
+    )
+
+
+def prepare_apply_pack_preview(
+    storage,
+    vacancy_id: str,
+    *,
+    lang: str = "ru",
+    style: str = "medium",
+    template_name: str | None = None,
+) -> dict[str, Any]:
+    """Build apply-pack data without writing files or review drafts."""
+    vacancy = storage.get_vacancy_full(vacancy_id)
+    if not vacancy:
+        return {
+            "ok": False,
+            "message": f"Vacancy '{vacancy_id}' not found.",
+            "error_type": "not_found",
+            "vacancy_id": vacancy_id,
+            "lang": lang,
+            "style": style,
+            "data": None,
+        }
+
+    details = storage.get_score_details(vacancy_id)
+    pack = _generate_pack_data(vacancy, details, lang, style, template_name)
+    validation = pack["letter_validation"]
+    ok = bool(validation.get("ok", False))
+    message = (
+        f"Apply pack preview ready for {vacancy_id}"
+        if ok
+        else f"Letter gate rejected for {vacancy_id}"
+    )
+    return {
+        "ok": ok,
+        "message": message,
+        "error_type": None if ok else "validation",
+        "vacancy_id": vacancy_id,
+        "lang": lang,
+        "style": style,
+        "data": {
+            "vacancy_title": vacancy.get("name", ""),
+            "employer_name": vacancy.get("employer_name", ""),
+            "cover_letter": pack["cover_letter"],
+            "md_content": pack["md_content"],
+            "letter_validation": validation,
+            "letter_meta": pack["letter_meta"],
+        },
+    }
 
 
 # ── Main command ────────────────────────────────────────────────────────────
@@ -454,15 +517,26 @@ def command_apply_pack(args: argparse.Namespace) -> int:
         return 0
 
     saved_drafts = 0
+    generated = 0
+    rejected = 0
+    generated_rows: list[dict[str, Any]] = []
     for vacancy in vacancies:
         vid = vacancy["id"]
         details = storage.get_score_details(vid)
-        paths = _write_pack(vacancy, details, lang, fmt, out_dir, style, template_name)
+        pack = _generate_pack_data(vacancy, details, lang, style, template_name)
+        validation = pack["letter_validation"]
+        if getattr(args, "diagnostics", False) or not validation.get("ok", False):
+            _print_letter_diagnostics(vid, validation)
+        if not validation.get("ok", False):
+            rejected += 1
+            continue
+        paths = _write_pack(vacancy, pack["md_content"], fmt, out_dir)
         console.print(f"[green]{vid}: {paths.name} ({style})[/green]")
+        generated += 1
+        generated_rows.append(vacancy)
 
         if args.save_review:
-            md_content = _generate_md(vacancy, details, lang, style, template_name)
-            if _save_review(storage, vid, md_content, args.overwrite):
+            if _save_review(storage, vid, pack["md_content"], args.overwrite):
                 saved_drafts += 1
             elif not args.overwrite:
                 console.print(f"[dim]{vid}: draft already exists, use --overwrite[/dim]")
@@ -471,14 +545,14 @@ def command_apply_pack(args: argparse.Namespace) -> int:
         console.print(f"[green]Saved {saved_drafts} cover letter drafts to review.[/green]")
 
     # Generate index if multiple
-    if len(vacancies) > 1:
+    if len(generated_rows) > 1:
         index_lines = [
             "<!doctype html><html><head><meta charset=utf-8><title>Apply Packs</title>",
             "<style>body{background:#0b1020;color:#e8edf7;font:15px system-ui;max-width:800px;margin:40px auto;padding:20px}",
             "h1{color:#67e8f9} a{color:#bfdbfe} li{margin:8px 0}</style></head><body>",
-            f"<h1>Apply Packs ({len(vacancies)})</h1><ul>",
+            f"<h1>Apply Packs ({len(generated_rows)})</h1><ul>",
         ]
-        for v in vacancies:
+        for v in generated_rows:
             slug = _slug(v.get("name", ""))
             index_lines.append(
                 f'<li><a href="{v["id"]}_{slug}.html">{v.get("name", "?")}</a> — '
@@ -488,4 +562,8 @@ def command_apply_pack(args: argparse.Namespace) -> int:
         (out_dir / "index.html").write_text("\n".join(index_lines), encoding="utf-8")
         console.print(f"[green]Index: {out_dir / 'index.html'}[/green]")
 
+    if rejected:
+        console.print(f"[yellow]Skipped {rejected} weak letter draft(s).[/yellow]")
+    if generated == 0 and rejected:
+        return 1
     return 0

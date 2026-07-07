@@ -7,179 +7,125 @@ templates:
   default:
     ru:
       short: |
-        Здравствуйте!
+        {opener}
 
-        Меня зовут {candidate_name}. Меня заинтересовала вакансия **{vacancy_title}** в **{company}**, так как мой опыт связан с {top_keywords}.
+        {target_line} {role_focus}
 
-        {candidate_summary}
+        {evidence_line} {candidate_summary}
 
-        Буду рад обсудить детали.
-        С уважением,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
       medium: |
-        Здравствуйте!
+        {opener}
 
-        Меня зовут {candidate_name}. Рассматриваю позицию **{vacancy_title}** в **{company}**.
+        {target_line} {role_focus}
 
-        Мой профиль:
-        - {fit_reasons}
+        {evidence_line} {candidate_summary}
 
-        {candidate_summary}
+        {ai_case_block}
 
-        Готов обсудить сотрудничество и ответить на вопросы.
-        {availability}
-
-        С уважением,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
       detailed: |
-        Здравствуйте!
+        {opener}
 
-        Меня зовут {candidate_name}. Меня заинтересовала позиция **{vacancy_title}** в **{company}**.
+        {target_line} {role_focus}
 
-        Почему я подхожу:
-        - {fit_reasons}
+        {evidence_line} {candidate_summary}
 
-        Что я могу привнести:
-        {candidate_summary}
+        {ai_case_block}
 
-        Потенциальные вопросы, которые стоит обсудить:
-        - Как организован процесс онбординга?
-        - Какие ключевые метрики успеха на первые 3 месяца?
-        - Есть ли бюджет на инструменты / обучение?
+        В подобных ролях я полезен там, где нужно быстро разобрать требования, собрать рабочую интеграционную схему и довести её до стабильного результата.
 
-        О себе: {location}. {availability}
-
-        Буду рад познакомиться и обсудить возможное сотрудничество.
-
-        С уважением,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
     en:
       short: |
-        Hello!
+        {opener}
 
-        My name is {candidate_name}. I'm interested in the **{vacancy_title}** role at **{company}**, as my experience aligns with {top_keywords}.
+        {target_line} {role_focus}
 
-        {candidate_summary}
+        {evidence_line} {candidate_summary}
 
-        Looking forward to discussing further.
-        Best regards,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
       medium: |
-        Hello!
+        {opener}
 
-        My name is {candidate_name}. I'm applying for the **{vacancy_title}** position at **{company}**.
+        {target_line} {role_focus}
 
-        My profile:
-        - {fit_reasons}
+        {evidence_line} {candidate_summary}
 
-        {candidate_summary}
+        {ai_case_block}
 
-        I'm available to discuss the role and answer any questions.
-        {availability}
-
-        Best regards,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
       detailed: |
-        Hello!
+        {opener}
 
-        My name is {candidate_name}. I'm excited about the **{vacancy_title}** opportunity at **{company}**.
+        {target_line} {role_focus}
 
-        Why I'm a strong fit:
-        - {fit_reasons}
+        {evidence_line} {candidate_summary}
 
-        What I bring:
-        {candidate_summary}
+        {ai_case_block}
 
-        Questions I'd love to discuss:
-        - What does the onboarding process look like?
-        - What are the key success metrics for the first 3 months?
-        - Is there a budget for tools / learning?
+        In similar roles I am most useful when the team needs someone who can turn requirements into a reliable integration flow and ship a practical result.
 
-        About me: based in {location}. {availability}
-
-        I'd be delighted to connect and explore how I can contribute.
-
-        Best regards,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
   ai_rag_remote:
     ru:
       medium: |
-        Здравствуйте!
+        {opener}
 
-        Меня зовут {candidate_name}. Меня заинтересовала позиция **{vacancy_title}** в **{company}**, так как я специализируюсь на AI и RAG-решениях.
+        {target_line} {role_focus}
 
-        Ключевые пересечения с вакансией:
-        - {fit_reasons}
+        У меня практический опыт в Python, LLM/RAG интеграциях, webhook-сценариях и автоматизации через n8n/Make. {candidate_summary}
 
-        Мой опыт включает построение RAG-пайплайнов, интеграцию LLM, n8n-автоматизации и работу с векторными базами данных. {candidate_summary}
+        {ai_case_block}
 
-        Готов обсудить, как могу помочь вашей команде. {availability}
-
-        С уважением,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
     en:
       medium: |
-        Hello!
+        {opener}
 
-        My name is {candidate_name}. I'm interested in the **{vacancy_title}** role at **{company}**, as I specialize in AI and RAG solutions.
+        {target_line} {role_focus}
 
-        Key overlaps with the role:
-        - {fit_reasons}
+        My hands-on background includes Python, LLM/RAG integrations, webhook workflows, and automation with n8n/Make. {candidate_summary}
 
-        My experience includes building RAG pipelines, LLM integration, n8n automation, and vector database work. {candidate_summary}
+        {ai_case_block}
 
-        I'd be happy to discuss how I can contribute to your team. {availability}
-
-        Best regards,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
   bitrix24_crm_remote:
     ru:
       medium: |
-        Здравствуйте!
+        {opener}
 
-        Меня зовут {candidate_name}. Меня заинтересовала вакансия **{vacancy_title}** в **{company}**.
+        {target_line} {role_focus}
 
-        Релевантный опыт:
-        - {fit_reasons}
+        Мой релевантный опыт — внедрение и развитие Bitrix24, CRM-процессов, интеграций с 1С и REST API. {candidate_summary}
 
-        Я специализируюсь на CRM-решениях, внедрении Битрикс24, 1С-интеграциях и автоматизации бизнес-процессов. {candidate_summary}
-
-        Готов обсудить сотрудничество. {availability}
-
-        С уважением,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}
     en:
       medium: |
-        Hello!
+        {opener}
 
-        My name is {candidate_name}. I'm interested in the **{vacancy_title}** position at **{company}**.
+        {target_line} {role_focus}
 
-        Relevant experience:
-        - {fit_reasons}
+        My relevant background is in Bitrix24 delivery, CRM process design, 1C integrations, and REST API implementations. {candidate_summary}
 
-        I specialize in CRM solutions, Bitrix24 implementation, 1C integrations, and business process automation. {candidate_summary}
-
-        Looking forward to discussing this opportunity. {availability}
-
-        Best regards,
+        {closing_line}
         {candidate_name}
-        {github}
-        {linkedin}
+        {links_line}

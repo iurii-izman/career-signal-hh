@@ -137,6 +137,12 @@ def test_apply_pack_top_parses() -> None:
     assert args.format == "md"
 
 
+def test_apply_pack_diagnostics_parses() -> None:
+    args = parse_args(["apply-pack", "12345", "--diagnostics"])
+    assert args.vacancy_id == "12345"
+    assert args.diagnostics is True
+
+
 # ── analytics ────────────────────────────────────────────────────────────────
 
 

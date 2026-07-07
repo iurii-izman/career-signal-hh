@@ -191,32 +191,7 @@ def generate_apply_pack_preview(
     vacancy_id: str, lang: str = "ru", style: str = "medium"
 ) -> dict[str, Any]:
     """Generate apply pack and return preview data."""
-    import argparse
+    from ..commands.apply_pack import prepare_apply_pack_preview
 
-    from ..commands.apply_pack import command_apply_pack
-
-    pack_args = argparse.Namespace(
-        vacancy_id=vacancy_id,
-        top=None,
-        limit=None,
-        decision=None,
-        preset=None,
-        min_score=0,
-        lang=lang,
-        format="both",
-        style=style,
-        template=None,
-        save_review=False,
-        overwrite=False,
-    )
-    try:
-        rc = command_apply_pack(pack_args)
-        return {
-            "ok": rc == 0,
-            "message": f"Apply pack generated for {vacancy_id}",
-            "vacancy_id": vacancy_id,
-            "lang": lang,
-            "style": style,
-        }
-    except Exception as exc:
-        return {"ok": False, "message": f"Apply pack failed: {exc}"}
+    storage = _get_storage()
+    return prepare_apply_pack_preview(storage, vacancy_id, lang=lang, style=style)

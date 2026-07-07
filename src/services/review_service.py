@@ -168,7 +168,12 @@ def generate_apply_pack_for(vacancy_id: str) -> dict[str, Any]:
     """Generate apply pack for a single vacancy, save draft to review."""
     import argparse
 
-    from ..commands.apply_pack import command_apply_pack
+    from ..commands.apply_pack import command_apply_pack, prepare_apply_pack_preview
+
+    storage = _get_storage()
+    preview = prepare_apply_pack_preview(storage, vacancy_id, lang="ru", style="medium")
+    if not preview["ok"]:
+        return preview
 
     pack_args = argparse.Namespace(
         vacancy_id=vacancy_id,
@@ -183,9 +188,16 @@ def generate_apply_pack_for(vacancy_id: str) -> dict[str, Any]:
         template=None,
         save_review=True,
         overwrite=False,
+        diagnostics=False,
     )
     try:
         rc = command_apply_pack(pack_args)
-        return {"ok": rc == 0, "message": f"Apply pack generated for {vacancy_id}"}
+        preview["ok"] = rc == 0
+        preview["message"] = (
+            f"Apply pack generated for {vacancy_id}"
+            if rc == 0
+            else f"Apply pack failed for {vacancy_id}"
+        )
+        return preview
     except Exception as exc:
-        return {"ok": False, "message": f"Apply pack failed: {exc}"}
+        return {"ok": False, "message": f"Apply pack failed: {exc}", "data": preview.get("data")}

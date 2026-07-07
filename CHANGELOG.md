@@ -5,6 +5,7 @@
 - explainable score_details with decision labels
 - review queue and bulk actions
 - apply pack generation (MD/HTML)
+- letter engine rewrite with deterministic apply-pack validator gate
 - safe daily autopilot workflow
 - market analytics (skills, employers, salary, funnel)
 - preset management CLI (create, clone, edit, validate)

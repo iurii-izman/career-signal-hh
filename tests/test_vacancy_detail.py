@@ -192,6 +192,121 @@ def test_apply_pack_preview_endpoint(empty_db: str) -> None:
     asyncio.run(_run())
 
 
+def test_apply_pack_preview_endpoint_returns_validation_without_writing_files(
+    empty_db: str, tmp_path: Path, monkeypatch
+) -> None:
+    _init_db(empty_db)
+    _seed_vacancy(empty_db, "v5b", "Senior CRM Analyst", "Acme CRM")
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(
+        "src.commands.apply_pack.build_cover_letter",
+        lambda *a, **kw: {
+            "text": "Здравствуйте, команда Acme CRM.\n\nОткликаюсь на позицию Senior CRM Analyst.\n\n"
+            "Мой релевантный опыт — внедрение и развитие Bitrix24, CRM-процессов, интеграций с 1С и REST API.\n\n"
+            "Судя по описанию роли, особенно релевантны задачи вокруг CRM, Bitrix24.\n\n"
+            "Если мой опыт релевантен вашей задаче, готов обсудить детали.",
+            "validation": {
+                "ok": True,
+                "reasons": [],
+                "metrics": {"word_count": 42, "anchor_hits": ["CRM", "Bitrix24"]},
+            },
+            "meta": {"role_family": "bitrix"},
+        },
+    )
+
+    import asyncio
+
+    from src.web.routes import api_vacancy_apply_pack_preview
+
+    async def _run():
+        resp = await api_vacancy_apply_pack_preview("v5b")
+        import json
+
+        body = json.loads(resp.body)
+        assert resp.status_code == 200
+        assert body["ok"] is True
+        assert body["data"]["letter_validation"]["ok"] is True
+        assert "cover_letter" in body["data"]
+
+    asyncio.run(_run())
+    assert not (tmp_path / "exports" / "apply_packs").exists()
+
+
+def test_apply_pack_preview_reject_returns_422_with_reasons(empty_db: str, monkeypatch) -> None:
+    _init_db(empty_db)
+    _seed_vacancy(empty_db, "v5c", "Weak Job", "Weak Corp")
+
+    monkeypatch.setattr(
+        "src.commands.apply_pack.build_cover_letter",
+        lambda *a, **kw: {
+            "text": "Hello!\n\nMy profile:\n- Python\n\nLooking forward to discussing further.",
+            "validation": {
+                "ok": False,
+                "reasons": ["contains_generic_phrase", "contains_markdown_artifacts"],
+                "metrics": {"word_count": 11, "anchor_hits": []},
+            },
+            "meta": {"role_family": "default"},
+        },
+    )
+
+    import asyncio
+
+    from src.web.routes import api_vacancy_apply_pack_preview
+
+    async def _run():
+        resp = await api_vacancy_apply_pack_preview("v5c", lang="en")
+        import json
+
+        body = json.loads(resp.body)
+        assert resp.status_code == 422
+        assert body["ok"] is False
+        assert body["error_type"] == "validation"
+        assert body["data"]["letter_validation"]["reasons"] == [
+            "contains_generic_phrase",
+            "contains_markdown_artifacts",
+        ]
+
+    asyncio.run(_run())
+
+
+def test_apply_pack_generate_reject_returns_422_with_reasons(empty_db: str, monkeypatch) -> None:
+    _init_db(empty_db)
+    _seed_vacancy(empty_db, "v5d", "Weak Job", "Weak Corp")
+
+    monkeypatch.setattr(
+        "src.commands.apply_pack.build_cover_letter",
+        lambda *a, **kw: {
+            "text": "Hello!\n\nMy profile:\n- Python\n\nLooking forward to discussing further.",
+            "validation": {
+                "ok": False,
+                "reasons": ["contains_generic_phrase", "contains_markdown_artifacts"],
+                "metrics": {"word_count": 11, "anchor_hits": []},
+            },
+            "meta": {"role_family": "default"},
+        },
+    )
+
+    import asyncio
+
+    from src.web.routes import api_vacancy_apply_pack
+
+    async def _run():
+        resp = await api_vacancy_apply_pack("v5d")
+        import json
+
+        body = json.loads(resp.body)
+        assert resp.status_code == 422
+        assert body["ok"] is False
+        assert body["error_type"] == "validation"
+        assert body["data"]["letter_validation"]["reasons"] == [
+            "contains_generic_phrase",
+            "contains_markdown_artifacts",
+        ]
+
+    asyncio.run(_run())
+
+
 # ── Similar endpoint works with clusters ───────────────────────────────
 
 
