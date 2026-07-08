@@ -93,10 +93,10 @@ Exit criteria:
 
 Scope:
 
-- add `briefing_reports`;
+- keep `briefing_reports` as the generated-artifact store added in Epic C;
 - add `vacancy_events`;
 - add `integration_outbox`;
-- extend review storage to reference generated artifacts.
+- connect review / apply-pack / briefing actions to event emission.
 
 Exit criteria:
 

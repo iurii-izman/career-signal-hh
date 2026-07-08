@@ -36,7 +36,7 @@ Reason:
 - storing it separately keeps review state compact and makes future event/outbox
   work cleaner.
 
-### 3. Event model is intentionally deferred
+### 3. Event model was intentionally deferred in Epic C
 
 `vacancy_events` is not added in this epic.
 
@@ -46,6 +46,11 @@ Reason:
   stable briefing workflow now;
 - `briefing_reports` is sufficient for save/export/review integration in the
   current architecture.
+
+Status update:
+
+- superseded by Epic D implementation, which adds event/outbox emission around
+  briefing persistence without changing the briefing artifact model itself.
 
 ## Workflow now
 

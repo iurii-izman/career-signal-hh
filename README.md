@@ -696,6 +696,7 @@ python -m src.main briefing --top 10 --min-score 70 --remote-only --format html
 
 Сохранение и артефакты:
 - `--save-review` сохраняет briefing в таблицу `briefing_reports` как отдельный артефакт;
+- при сохранении briefing пишется событие `briefing_saved` и pending-запись в `integration_outbox`;
 - файлы пишутся в `exports/briefings/<id>_<slug>.md|.html|.json`;
 - для batch-режима создаётся `exports/briefings/index.html`;
 - основной `export` подхватывает ссылки на briefing/apply-pack, если HTML-артефакты уже созданы.
@@ -1007,9 +1008,17 @@ src/
 ```
 
 `src/hh_client.py` отвечает только за публичный HTTP API, `src/storage.py` —
-за SQLite и idempotent upsert, `src/scoring.py` — за правила, а экспортеры не
-зависят от сети. `first_seen_at` при обновлении не перезаписывается; подробности
-и score пересчитываются.
+за SQLite, idempotent upsert и event trail (`vacancy_events`, `integration_outbox`),
+`src/scoring.py` — за правила, а экспортеры не зависят от сети. `first_seen_at`
+при обновлении не перезаписывается; подробности и score пересчитываются.
+
+Ключевые evented actions:
+
+- `review set` / `review apply` / `review next` и bulk review actions пишут события в `vacancy_events`;
+- сохранение draft через `apply-pack --save-review` пишет `review_draft_saved`;
+- сохранение briefing пишет `briefing_saved`;
+- интеграционно значимые события дополнительно кладутся в `integration_outbox`
+  со статусом `pending` и target `external_sync`.
 
 Одна ошибка запроса или вакансии записывается в `search_runs` и не останавливает
 весь запуск.

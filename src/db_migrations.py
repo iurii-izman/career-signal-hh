@@ -111,6 +111,46 @@ def _migration_009_add_briefing_reports(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_010_add_evented_storage(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS vacancy_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vacancy_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            old_status TEXT NULL,
+            new_status TEXT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'local',
+            FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vacancy_events_vacancy_created
+        ON vacancy_events(vacancy_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_vacancy_events_type_created
+        ON vacancy_events(event_type, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS integration_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            vacancy_id TEXT NULL,
+            payload_json TEXT NOT NULL,
+            target TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_integration_outbox_status_target
+        ON integration_outbox(status, target, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_integration_outbox_vacancy
+        ON integration_outbox(vacancy_id, created_at DESC);
+        """
+    )
+
+
 MIGRATIONS: list[MigrationEntry] = [
     (
         1,
@@ -235,6 +275,11 @@ MIGRATIONS: list[MigrationEntry] = [
         9,
         "009_briefing_reports",
         _migration_009_add_briefing_reports,
+    ),
+    (
+        10,
+        "010_evented_storage",
+        _migration_010_add_evented_storage,
     ),
 ]
 
@@ -393,6 +438,16 @@ def count_orphans(connection: sqlite3.Connection) -> dict[str, int]:
     results["orphan_reviews"] = connection.execute(
         "SELECT COUNT(*) FROM vacancy_reviews WHERE vacancy_id NOT IN (SELECT id FROM vacancies)"
     ).fetchone()[0]
+    results["orphan_briefing_reports"] = connection.execute(
+        "SELECT COUNT(*) FROM briefing_reports WHERE vacancy_id NOT IN (SELECT id FROM vacancies)"
+    ).fetchone()[0]
+    results["orphan_vacancy_events"] = connection.execute(
+        "SELECT COUNT(*) FROM vacancy_events WHERE vacancy_id NOT IN (SELECT id FROM vacancies)"
+    ).fetchone()[0]
+    results["orphan_outbox_vacancy_refs"] = connection.execute(
+        "SELECT COUNT(*) FROM integration_outbox"
+        " WHERE vacancy_id IS NOT NULL AND vacancy_id NOT IN (SELECT id FROM vacancies)"
+    ).fetchone()[0]
     results["sample_count"] = connection.execute(
         "SELECT COUNT(*) FROM vacancies WHERE id LIKE 'sample-%'"
     ).fetchone()[0]
@@ -414,7 +469,7 @@ def count_orphans(connection: sqlite3.Connection) -> dict[str, int]:
 def cleanup_orphans(connection: sqlite3.Connection) -> dict[str, int]:
     """Remove orphan records. Returns counts of deleted rows."""
     results = {}
-    for table in ["scores", "score_details", "vacancy_reviews"]:
+    for table in ["scores", "score_details", "vacancy_reviews", "briefing_reports", "vacancy_events"]:
         c = connection.execute(
             f"DELETE FROM {table} WHERE vacancy_id NOT IN (SELECT id FROM vacancies)"
         )
@@ -470,6 +525,11 @@ def check_integrity_extended(connection: sqlite3.Connection) -> dict[str, Any]:
         "idx_reviews_status",
         "idx_score_details_preset",
         "idx_score_details_decision",
+        "idx_briefing_reports_updated",
+        "idx_vacancy_events_vacancy_created",
+        "idx_vacancy_events_type_created",
+        "idx_integration_outbox_status_target",
+        "idx_integration_outbox_vacancy",
     ]
     try:
         existing = [

@@ -30,6 +30,16 @@ def test_fresh_db_applies_all_migrations(tmp_path: Path) -> None:
         assert len(result["details"]) == len(db_migrations.MIGRATIONS)
         for d in result["details"]:
             assert d["status"] == "applied", f"Migration {d['version']} was not applied"
+
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "briefing_reports" in tables
+        assert "vacancy_events" in tables
+        assert "integration_outbox" in tables
     finally:
         conn.close()
 

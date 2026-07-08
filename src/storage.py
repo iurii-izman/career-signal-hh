@@ -73,12 +73,44 @@ CREATE TABLE IF NOT EXISTS briefing_reports (
     PRIMARY KEY(vacancy_id, lang),
     FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
 );
+CREATE TABLE IF NOT EXISTS vacancy_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vacancy_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    old_status TEXT NULL,
+    new_status TEXT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'local',
+    FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+);
+CREATE TABLE IF NOT EXISTS integration_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    vacancy_id TEXT NULL,
+    payload_json TEXT NOT NULL,
+    target TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+);
 CREATE INDEX IF NOT EXISTS idx_vacancies_published ON vacancies(published_at);
 CREATE INDEX IF NOT EXISTS idx_scores_total ON scores(total_score);
 CREATE INDEX IF NOT EXISTS idx_score_details_preset ON score_details(preset_name);
 CREATE INDEX IF NOT EXISTS idx_score_details_decision ON score_details(decision);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON vacancy_reviews(status);
 CREATE INDEX IF NOT EXISTS idx_briefing_reports_updated ON briefing_reports(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vacancy_events_vacancy_created
+ON vacancy_events(vacancy_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vacancy_events_type_created
+ON vacancy_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_integration_outbox_status_target
+ON integration_outbox(status, target, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_integration_outbox_vacancy
+ON integration_outbox(vacancy_id, created_at DESC);
 """
 
 REVIEW_STATUSES = {
@@ -118,6 +150,8 @@ VACANCY_COLUMNS = [
     "source_query",
 ]
 
+OUTBOX_TARGET_EXTERNAL_SYNC = "external_sync"
+
 
 class Storage:
     def __init__(self, path: str = "data/vacancies.sqlite") -> None:
@@ -148,14 +182,8 @@ class Storage:
             raise ValueError(f"Недопустимый review status={status!r}. Допустимы: {allowed}.")
         return normalized
 
-    def get_review(self, vacancy_id: str) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM vacancy_reviews WHERE vacancy_id = ?",
-                (vacancy_id,),
-            ).fetchone()
-        if row:
-            return dict(row)
+    @staticmethod
+    def _review_default(vacancy_id: str) -> dict[str, Any]:
         return {
             "vacancy_id": vacancy_id,
             "status": "new",
@@ -168,8 +196,235 @@ class Storage:
             "updated_at": None,
         }
 
-    def upsert_review(self, vacancy_id: str, **fields: Any) -> dict[str, Any]:
-        self._require_vacancy(vacancy_id)
+    @staticmethod
+    def _vacancy_exists_in_connection(connection: sqlite3.Connection, vacancy_id: str) -> bool:
+        row = connection.execute("SELECT 1 FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
+        return row is not None
+
+    def _require_vacancy_in_connection(
+        self, connection: sqlite3.Connection, vacancy_id: str
+    ) -> None:
+        if not self._vacancy_exists_in_connection(connection, vacancy_id):
+            raise ValueError(f"Вакансия с id={vacancy_id} не найдена.")
+
+    def _get_review_in_connection(
+        self, connection: sqlite3.Connection, vacancy_id: str
+    ) -> dict[str, Any]:
+        row = connection.execute(
+            "SELECT * FROM vacancy_reviews WHERE vacancy_id = ?",
+            (vacancy_id,),
+        ).fetchone()
+        return dict(row) if row else self._review_default(vacancy_id)
+
+    @staticmethod
+    def _trimmed_note_preview(note: str | None, limit: int = 120) -> str | None:
+        if note is None:
+            return None
+        normalized = " ".join(note.split())
+        if len(normalized) <= limit:
+            return normalized
+        return normalized[: limit - 3] + "..."
+
+    def _build_outbox_payload(
+        self,
+        connection: sqlite3.Connection,
+        vacancy_id: str,
+        *,
+        event_type: str,
+        created_at: str,
+        source: str,
+        payload: dict[str, Any],
+        old_status: str | None,
+        new_status: str | None,
+    ) -> dict[str, Any]:
+        vacancy = connection.execute(
+            """
+            SELECT id, name, employer_name, area_name, alternate_url, published_at,
+                   salary_from, salary_to, salary_currency, schedule_name,
+                   employment_name, experience_name
+            FROM vacancies
+            WHERE id = ?
+            """,
+            (vacancy_id,),
+        ).fetchone()
+        review = self._get_review_in_connection(connection, vacancy_id)
+        briefing = connection.execute(
+            """
+            SELECT vacancy_id, lang, score_total, decision, created_at, updated_at
+            FROM briefing_reports
+            WHERE vacancy_id = ?
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT 1
+            """,
+            (vacancy_id,),
+        ).fetchone()
+
+        review_snapshot = {
+            "status": review.get("status"),
+            "priority": review.get("priority"),
+            "user_notes_preview": self._trimmed_note_preview(review.get("user_notes")),
+            "applied_at": review.get("applied_at"),
+            "next_action": review.get("next_action"),
+            "next_action_at": review.get("next_action_at"),
+            "updated_at": review.get("updated_at"),
+        }
+        briefing_snapshot = None
+        if briefing:
+            briefing_snapshot = {
+                "lang": briefing["lang"],
+                "score_total": briefing["score_total"],
+                "decision": briefing["decision"],
+                "created_at": briefing["created_at"],
+                "updated_at": briefing["updated_at"],
+            }
+
+        return {
+            "payload_version": "1.0",
+            "source": "career-signal-hh",
+            "event_type": event_type,
+            "emitted_at": created_at,
+            "emission_source": source,
+            "vacancy": dict(vacancy) if vacancy else {"id": vacancy_id},
+            "review": review_snapshot,
+            "briefing": briefing_snapshot,
+            "event": {
+                "old_status": old_status,
+                "new_status": new_status,
+                "payload": payload,
+            },
+        }
+
+    def _record_event(
+        self,
+        connection: sqlite3.Connection,
+        vacancy_id: str,
+        *,
+        event_type: str,
+        source: str,
+        payload: dict[str, Any],
+        old_status: str | None = None,
+        new_status: str | None = None,
+        enqueue_outbox: bool = False,
+        target: str = OUTBOX_TARGET_EXTERNAL_SYNC,
+    ) -> None:
+        created_at = datetime.now(timezone.utc).isoformat()
+        payload_json = json_dumps(payload)
+        connection.execute(
+            """
+            INSERT INTO vacancy_events (
+                vacancy_id, event_type, old_status, new_status,
+                payload_json, created_at, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (vacancy_id, event_type, old_status, new_status, payload_json, created_at, source),
+        )
+        if not enqueue_outbox:
+            return
+
+        outbox_payload = self._build_outbox_payload(
+            connection,
+            vacancy_id,
+            event_type=event_type,
+            created_at=created_at,
+            source=source,
+            payload=payload,
+            old_status=old_status,
+            new_status=new_status,
+        )
+        outbox_payload_json = json_dumps(outbox_payload)
+        connection.execute(
+            """
+            INSERT INTO integration_outbox (
+                event_type, vacancy_id, payload_json, target,
+                status, attempts, last_error, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'pending', 0, NULL, ?, ?)
+            """,
+            (event_type, vacancy_id, outbox_payload_json, target, created_at, created_at),
+        )
+
+    def _emit_review_events(
+        self,
+        connection: sqlite3.Connection,
+        vacancy_id: str,
+        *,
+        before: dict[str, Any],
+        after: dict[str, Any],
+        changed_fields: set[str],
+    ) -> None:
+        if "status" in changed_fields:
+            old_status = before.get("status")
+            new_status = after.get("status")
+            status_event_type = "review_applied" if new_status == "applied" else "review_status_changed"
+            status_payload = {
+                "status": new_status,
+                "applied_at": after.get("applied_at"),
+            }
+            self._record_event(
+                connection,
+                vacancy_id,
+                event_type=status_event_type,
+                source="review",
+                payload=status_payload,
+                old_status=old_status,
+                new_status=new_status,
+                enqueue_outbox=True,
+            )
+
+        if "user_notes" in changed_fields:
+            self._record_event(
+                connection,
+                vacancy_id,
+                event_type="review_note_updated",
+                source="review",
+                payload={
+                    "has_note": bool(after.get("user_notes")),
+                    "note_length": len(after.get("user_notes") or ""),
+                },
+            )
+
+        if {"next_action", "next_action_at"} & changed_fields:
+            self._record_event(
+                connection,
+                vacancy_id,
+                event_type="review_next_action_set",
+                source="review",
+                payload={
+                    "next_action": after.get("next_action"),
+                    "next_action_at": after.get("next_action_at"),
+                },
+                old_status=before.get("status"),
+                new_status=after.get("status"),
+                enqueue_outbox=True,
+            )
+
+        if "cover_letter_draft" in changed_fields:
+            had_before = bool(before.get("cover_letter_draft"))
+            has_after = bool(after.get("cover_letter_draft"))
+            event_type = "review_draft_saved" if has_after else "review_draft_cleared"
+            self._record_event(
+                connection,
+                vacancy_id,
+                event_type=event_type,
+                source="apply_pack",
+                payload={
+                    "had_draft_before": had_before,
+                    "has_draft_after": has_after,
+                    "draft_length": len(after.get("cover_letter_draft") or ""),
+                },
+                old_status=before.get("status"),
+                new_status=after.get("status"),
+                enqueue_outbox=has_after,
+            )
+
+    def _update_review_in_connection(
+        self,
+        connection: sqlite3.Connection,
+        vacancy_id: str,
+        **fields: Any,
+    ) -> dict[str, Any]:
+        self._require_vacancy_in_connection(connection, vacancy_id)
         allowed_fields = {
             "status",
             "priority",
@@ -184,24 +439,47 @@ class Storage:
             raise ValueError(f"Неизвестные review-поля: {', '.join(sorted(unknown))}.")
         if "status" in fields:
             fields["status"] = self._validate_review_status(str(fields["status"]))
+
+        before = self._get_review_in_connection(connection, vacancy_id)
         now = datetime.now(timezone.utc).isoformat()
-        with self.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO vacancy_reviews (vacancy_id, status, updated_at)
+            VALUES (?, 'new', ?)
+            ON CONFLICT(vacancy_id) DO NOTHING
+            """,
+            (vacancy_id, now),
+        )
+        if fields:
+            assignments = ", ".join(f"{field} = ?" for field in fields)
             connection.execute(
-                """
-                INSERT INTO vacancy_reviews (vacancy_id, status, updated_at)
-                VALUES (?, 'new', ?)
-                ON CONFLICT(vacancy_id) DO NOTHING
-                """,
-                (vacancy_id, now),
+                f"UPDATE vacancy_reviews SET {assignments}, updated_at = ? "
+                "WHERE vacancy_id = ?",
+                [*fields.values(), now, vacancy_id],
             )
-            if fields:
-                assignments = ", ".join(f"{field} = ?" for field in fields)
-                connection.execute(
-                    f"UPDATE vacancy_reviews SET {assignments}, updated_at = ? "
-                    "WHERE vacancy_id = ?",
-                    [*fields.values(), now, vacancy_id],
-                )
-        return self.get_review(vacancy_id)
+        after = self._get_review_in_connection(connection, vacancy_id)
+        changed_fields = {
+            field
+            for field in allowed_fields
+            if before.get(field) != after.get(field)
+        }
+        if changed_fields:
+            self._emit_review_events(
+                connection,
+                vacancy_id,
+                before=before,
+                after=after,
+                changed_fields=changed_fields,
+            )
+        return after
+
+    def get_review(self, vacancy_id: str) -> dict[str, Any]:
+        with self.connect() as connection:
+            return self._get_review_in_connection(connection, vacancy_id)
+
+    def upsert_review(self, vacancy_id: str, **fields: Any) -> dict[str, Any]:
+        with self.connect() as connection:
+            return self._update_review_in_connection(connection, vacancy_id, **fields)
 
     def set_review_status(self, vacancy_id: str, status: str) -> dict[str, Any]:
         return self.upsert_review(vacancy_id, status=status)
@@ -424,6 +702,20 @@ class Storage:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_briefing_reports(
+        self, *, vacancy_id: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Return latest saved briefing reports."""
+        sql = "SELECT * FROM briefing_reports"
+        params: list[Any] = []
+        if vacancy_id:
+            sql += " WHERE vacancy_id = ?"
+            params.append(vacancy_id)
+        sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+
     def upsert_briefing_report(
         self,
         vacancy_id: str,
@@ -435,10 +727,14 @@ class Storage:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         """Insert or update a saved briefing artifact."""
-        self._require_vacancy(vacancy_id)
-        now = datetime.now(timezone.utc).isoformat()
-        payload_json = json_dumps(payload)
         with self.connect() as connection:
+            self._require_vacancy_in_connection(connection, vacancy_id)
+            before = connection.execute(
+                "SELECT 1 FROM briefing_reports WHERE vacancy_id = ? AND lang = ?",
+                (vacancy_id, lang),
+            ).fetchone()
+            now = datetime.now(timezone.utc).isoformat()
+            payload_json = json_dumps(payload)
             connection.execute(
                 """
                 INSERT INTO briefing_reports (
@@ -464,7 +760,69 @@ class Storage:
                     now,
                 ),
             )
-        return self.get_briefing_report(vacancy_id, lang) or {}
+            self._record_event(
+                connection,
+                vacancy_id,
+                event_type="briefing_saved",
+                source="briefing",
+                payload={
+                    "lang": lang,
+                    "score_total": score_total,
+                    "decision": decision,
+                    "is_new": before is None,
+                },
+                old_status=self._get_review_in_connection(connection, vacancy_id).get("status"),
+                new_status=self._get_review_in_connection(connection, vacancy_id).get("status"),
+                enqueue_outbox=True,
+            )
+            row = connection.execute(
+                "SELECT * FROM briefing_reports WHERE vacancy_id = ? AND lang = ?",
+                (vacancy_id, lang),
+            ).fetchone()
+        return dict(row) if row else {}
+
+    def list_vacancy_events(
+        self,
+        vacancy_id: str,
+        *,
+        limit: int = 50,
+        event_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return latest vacancy events for a vacancy."""
+        sql = "SELECT * FROM vacancy_events WHERE vacancy_id = ?"
+        params: list[Any] = [vacancy_id]
+        if event_type:
+            sql += " AND event_type = ?"
+            params.append(event_type)
+        sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+
+    def list_outbox_entries(
+        self,
+        *,
+        status: str | None = None,
+        target: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return integration outbox entries ordered oldest-first within status."""
+        where: list[str] = []
+        params: list[Any] = []
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        if target:
+            where.append("target = ?")
+            params.append(target)
+
+        sql = "SELECT * FROM integration_outbox"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY created_at ASC, id ASC LIMIT ?"
+        params.append(limit)
+        with self.connect() as connection:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
 
     def list_vacancies_for_rescore(
         self, limit: int | None = None, preset: str | None = None
@@ -1005,69 +1363,33 @@ class Storage:
             params.append(self._validate_review_status(status))
 
         protected = self.REVIEW_PROTECTED_STATUSES
-        now = datetime.now(timezone.utc).isoformat()
 
         with self.connect() as connection:
-            # Count matched
-            count_sql = f"""
-                SELECT COUNT(*) FROM vacancies v
-                LEFT JOIN scores s ON s.vacancy_id = v.id
-                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
-                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
-                WHERE {" AND ".join(where)}
-            """
-            matched = connection.execute(count_sql, params).fetchone()[0]
-
-            # Count protected
-            if not force and protected:
-                p_placeholders = ", ".join("?" for _ in protected)
-                protected_where = where + [f"COALESCE(r.status, 'new') IN ({p_placeholders})"]
-                protected_params = params + list(protected)
-                protected_sql = f"""
-                    SELECT COUNT(*) FROM vacancies v
-                    LEFT JOIN scores s ON s.vacancy_id = v.id
-                    LEFT JOIN score_details sd ON sd.vacancy_id = v.id
-                    LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
-                    WHERE {" AND ".join(protected_where)}
-                """
-                skipped = connection.execute(protected_sql, protected_params).fetchone()[0]
-            else:
-                skipped = 0
-
-            # Update non-protected
-            update_where = list(where)  # copy for modification
-            update_params_list: list[Any] = [normalized_new, now] + list(params)
-            if not force and protected:
-                p_placeholders = ", ".join("?" for _ in protected)
-                update_where.append(f"COALESCE(r.status, 'new') NOT IN ({p_placeholders})")
-                update_params_list.extend(protected)
-
-            set_clause = "status = ?, updated_at = ?"
-            update_sql = f"""
-                UPDATE vacancy_reviews
-                SET {set_clause}
-                WHERE vacancy_id IN (
-                    SELECT v.id FROM vacancies v
-                    LEFT JOIN scores s ON s.vacancy_id = v.id
-                    LEFT JOIN score_details sd ON sd.vacancy_id = v.id
-                    LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
-                    WHERE {" AND ".join(update_where)}
-                )
-            """
-            cursor = connection.execute(update_sql, update_params_list)
-            updated = cursor.rowcount
-
-            # For matched vacancies without a review row, insert one
-            insert_sql = f"""
-                INSERT OR IGNORE INTO vacancy_reviews (vacancy_id, status, updated_at)
-                SELECT v.id, ?, ?
+            rows = connection.execute(
+                f"""
+                SELECT v.id, COALESCE(r.status, 'new') current_status
                 FROM vacancies v
                 LEFT JOIN scores s ON s.vacancy_id = v.id
                 LEFT JOIN score_details sd ON sd.vacancy_id = v.id
                 LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
                 WHERE {" AND ".join(where)}
-            """
-            connection.execute(insert_sql, [normalized_new, now] + params)
+                """,
+                params,
+            ).fetchall()
+
+            matched = len(rows)
+            skipped = 0
+            updated = 0
+
+            for row in rows:
+                current_status = row["current_status"] or "new"
+                if not force and current_status in protected:
+                    skipped += 1
+                    continue
+                if current_status == normalized_new:
+                    continue
+                self._update_review_in_connection(connection, row["id"], status=normalized_new)
+                updated += 1
 
         return {
             "matched_count": matched,
