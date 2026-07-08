@@ -151,6 +151,68 @@ def _migration_010_add_evented_storage(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_011_add_oauth_sync_tables(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS oauth_tokens_meta (
+            provider TEXT PRIMARY KEY,
+            account_id TEXT NULL,
+            account_email TEXT NULL,
+            token_type TEXT NULL,
+            scope TEXT NULL,
+            storage_backend TEXT NOT NULL DEFAULT 'keyring',
+            access_token_present INTEGER NOT NULL DEFAULT 0,
+            refresh_token_present INTEGER NOT NULL DEFAULT 0,
+            access_token_hint TEXT NULL,
+            refresh_token_hint TEXT NULL,
+            obtained_at TEXT NULL,
+            expires_at TEXT NULL,
+            last_refresh_at TEXT NULL,
+            last_sync_at TEXT NULL,
+            last_error TEXT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS hh_profiles (
+            id TEXT PRIMARY KEY,
+            email TEXT NULL,
+            first_name TEXT NULL,
+            last_name TEXT NULL,
+            middle_name TEXT NULL,
+            is_applicant INTEGER NULL,
+            raw_json TEXT NOT NULL,
+            synced_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS hh_resumes (
+            id TEXT PRIMARY KEY,
+            title TEXT NULL,
+            status TEXT NULL,
+            url TEXT NULL,
+            alternate_url TEXT NULL,
+            updated_at_remote TEXT NULL,
+            raw_json TEXT NOT NULL,
+            synced_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS hh_negotiations (
+            id TEXT PRIMARY KEY,
+            vacancy_id TEXT NULL,
+            resume_id TEXT NULL,
+            status TEXT NULL,
+            unread_messages INTEGER NULL,
+            updated_at_remote TEXT NULL,
+            raw_json TEXT NOT NULL,
+            synced_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_hh_resumes_updated
+        ON hh_resumes(updated_at_remote DESC, synced_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_hh_negotiations_status
+        ON hh_negotiations(status, synced_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_hh_negotiations_vacancy
+        ON hh_negotiations(vacancy_id, synced_at DESC);
+        """
+    )
+
+
 MIGRATIONS: list[MigrationEntry] = [
     (
         1,
@@ -280,6 +342,11 @@ MIGRATIONS: list[MigrationEntry] = [
         10,
         "010_evented_storage",
         _migration_010_add_evented_storage,
+    ),
+    (
+        11,
+        "011_oauth_sync_tables",
+        _migration_011_add_oauth_sync_tables,
     ),
 ]
 
@@ -530,6 +597,9 @@ def check_integrity_extended(connection: sqlite3.Connection) -> dict[str, Any]:
         "idx_vacancy_events_type_created",
         "idx_integration_outbox_status_target",
         "idx_integration_outbox_vacancy",
+        "idx_hh_resumes_updated",
+        "idx_hh_negotiations_status",
+        "idx_hh_negotiations_vacancy",
     ]
     try:
         existing = [

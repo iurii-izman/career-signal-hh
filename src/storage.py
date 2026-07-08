@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from . import db_migrations  # noqa: E402 — circular-safe, used in __init__
 from .models import ScoreDetails, ScoreResult, Vacancy
-from .utils import json_dumps, json_loads
+from .utils import json_dumps, json_loads, safe_get
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vacancies (
@@ -97,6 +97,55 @@ CREATE TABLE IF NOT EXISTS integration_outbox (
     updated_at TEXT NOT NULL,
     FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
 );
+CREATE TABLE IF NOT EXISTS oauth_tokens_meta (
+    provider TEXT PRIMARY KEY,
+    account_id TEXT NULL,
+    account_email TEXT NULL,
+    token_type TEXT NULL,
+    scope TEXT NULL,
+    storage_backend TEXT NOT NULL DEFAULT 'keyring',
+    access_token_present INTEGER NOT NULL DEFAULT 0,
+    refresh_token_present INTEGER NOT NULL DEFAULT 0,
+    access_token_hint TEXT NULL,
+    refresh_token_hint TEXT NULL,
+    obtained_at TEXT NULL,
+    expires_at TEXT NULL,
+    last_refresh_at TEXT NULL,
+    last_sync_at TEXT NULL,
+    last_error TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hh_profiles (
+    id TEXT PRIMARY KEY,
+    email TEXT NULL,
+    first_name TEXT NULL,
+    last_name TEXT NULL,
+    middle_name TEXT NULL,
+    is_applicant INTEGER NULL,
+    raw_json TEXT NOT NULL,
+    synced_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hh_resumes (
+    id TEXT PRIMARY KEY,
+    title TEXT NULL,
+    status TEXT NULL,
+    url TEXT NULL,
+    alternate_url TEXT NULL,
+    updated_at_remote TEXT NULL,
+    raw_json TEXT NOT NULL,
+    synced_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hh_negotiations (
+    id TEXT PRIMARY KEY,
+    vacancy_id TEXT NULL,
+    resume_id TEXT NULL,
+    status TEXT NULL,
+    unread_messages INTEGER NULL,
+    updated_at_remote TEXT NULL,
+    raw_json TEXT NOT NULL,
+    synced_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_vacancies_published ON vacancies(published_at);
 CREATE INDEX IF NOT EXISTS idx_scores_total ON scores(total_score);
 CREATE INDEX IF NOT EXISTS idx_score_details_preset ON score_details(preset_name);
@@ -111,6 +160,12 @@ CREATE INDEX IF NOT EXISTS idx_integration_outbox_status_target
 ON integration_outbox(status, target, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_integration_outbox_vacancy
 ON integration_outbox(vacancy_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hh_resumes_updated
+ON hh_resumes(updated_at_remote DESC, synced_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hh_negotiations_status
+ON hh_negotiations(status, synced_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hh_negotiations_vacancy
+ON hh_negotiations(vacancy_id, synced_at DESC);
 """
 
 REVIEW_STATUSES = {
@@ -169,6 +224,217 @@ class Storage:
             connection.commit()
         finally:
             connection.close()
+
+    def get_oauth_meta(self, provider: str = "hh_user_oauth") -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM oauth_tokens_meta WHERE provider = ?",
+                (provider,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_oauth_meta(self, provider: str, meta: dict[str, Any]) -> dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        current = self.get_oauth_meta(provider)
+        created_at = current.get("created_at", now) if current else now
+        payload = {
+            "provider": provider,
+            "account_id": meta.get("account_id"),
+            "account_email": meta.get("account_email"),
+            "token_type": meta.get("token_type"),
+            "scope": meta.get("scope"),
+            "storage_backend": meta.get("storage_backend", "keyring"),
+            "access_token_present": 1 if meta.get("access_token_present") else 0,
+            "refresh_token_present": 1 if meta.get("refresh_token_present") else 0,
+            "access_token_hint": meta.get("access_token_hint"),
+            "refresh_token_hint": meta.get("refresh_token_hint"),
+            "obtained_at": meta.get("obtained_at"),
+            "expires_at": meta.get("expires_at"),
+            "last_refresh_at": meta.get("last_refresh_at"),
+            "last_sync_at": meta.get("last_sync_at"),
+            "last_error": meta.get("last_error"),
+            "created_at": created_at,
+            "updated_at": now,
+        }
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO oauth_tokens_meta (
+                    provider, account_id, account_email, token_type, scope,
+                    storage_backend, access_token_present, refresh_token_present,
+                    access_token_hint, refresh_token_hint, obtained_at, expires_at,
+                    last_refresh_at, last_sync_at, last_error, created_at, updated_at
+                )
+                VALUES (
+                    :provider, :account_id, :account_email, :token_type, :scope,
+                    :storage_backend, :access_token_present, :refresh_token_present,
+                    :access_token_hint, :refresh_token_hint, :obtained_at, :expires_at,
+                    :last_refresh_at, :last_sync_at, :last_error, :created_at, :updated_at
+                )
+                ON CONFLICT(provider) DO UPDATE SET
+                    account_id=excluded.account_id,
+                    account_email=excluded.account_email,
+                    token_type=excluded.token_type,
+                    scope=excluded.scope,
+                    storage_backend=excluded.storage_backend,
+                    access_token_present=excluded.access_token_present,
+                    refresh_token_present=excluded.refresh_token_present,
+                    access_token_hint=excluded.access_token_hint,
+                    refresh_token_hint=excluded.refresh_token_hint,
+                    obtained_at=excluded.obtained_at,
+                    expires_at=excluded.expires_at,
+                    last_refresh_at=excluded.last_refresh_at,
+                    last_sync_at=excluded.last_sync_at,
+                    last_error=excluded.last_error,
+                    updated_at=excluded.updated_at
+                """,
+                payload,
+            )
+        saved = self.get_oauth_meta(provider)
+        return saved or payload
+
+    def clear_oauth_meta(self, provider: str = "hh_user_oauth") -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM oauth_tokens_meta WHERE provider = ?",
+                (provider,),
+            )
+
+    def save_hh_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        profile_id = str(profile.get("id") or "me")
+        synced_at = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "id": profile_id,
+            "email": profile.get("email"),
+            "first_name": profile.get("first_name"),
+            "last_name": profile.get("last_name"),
+            "middle_name": profile.get("middle_name"),
+            "is_applicant": None
+            if profile.get("is_applicant") is None
+            else int(bool(profile.get("is_applicant"))),
+            "raw_json": json_dumps(profile),
+            "synced_at": synced_at,
+        }
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO hh_profiles (
+                    id, email, first_name, last_name, middle_name, is_applicant, raw_json, synced_at
+                )
+                VALUES (:id, :email, :first_name, :last_name, :middle_name, :is_applicant, :raw_json, :synced_at)
+                ON CONFLICT(id) DO UPDATE SET
+                    email=excluded.email,
+                    first_name=excluded.first_name,
+                    last_name=excluded.last_name,
+                    middle_name=excluded.middle_name,
+                    is_applicant=excluded.is_applicant,
+                    raw_json=excluded.raw_json,
+                    synced_at=excluded.synced_at
+                """,
+                payload,
+            )
+        return payload
+
+    def save_hh_resumes(self, resumes: list[dict[str, Any]]) -> int:
+        synced_at = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            for resume in resumes:
+                connection.execute(
+                    """
+                    INSERT INTO hh_resumes (
+                        id, title, status, url, alternate_url, updated_at_remote, raw_json, synced_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        title=excluded.title,
+                        status=excluded.status,
+                        url=excluded.url,
+                        alternate_url=excluded.alternate_url,
+                        updated_at_remote=excluded.updated_at_remote,
+                        raw_json=excluded.raw_json,
+                        synced_at=excluded.synced_at
+                    """,
+                    (
+                        str(resume.get("id") or ""),
+                        resume.get("title"),
+                        resume.get("status", {}).get("id")
+                        if isinstance(resume.get("status"), dict)
+                        else resume.get("status"),
+                        resume.get("url"),
+                        resume.get("alternate_url"),
+                        resume.get("updated_at"),
+                        json_dumps(resume),
+                        synced_at,
+                    ),
+                )
+        return len(resumes)
+
+    def save_hh_negotiations(self, negotiations: list[dict[str, Any]]) -> int:
+        synced_at = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            for negotiation in negotiations:
+                unread_messages = safe_get(negotiation, "counters", "unread")
+                connection.execute(
+                    """
+                    INSERT INTO hh_negotiations (
+                        id, vacancy_id, resume_id, status, unread_messages, updated_at_remote, raw_json, synced_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        vacancy_id=excluded.vacancy_id,
+                        resume_id=excluded.resume_id,
+                        status=excluded.status,
+                        unread_messages=excluded.unread_messages,
+                        updated_at_remote=excluded.updated_at_remote,
+                        raw_json=excluded.raw_json,
+                        synced_at=excluded.synced_at
+                    """,
+                    (
+                        str(negotiation.get("id") or ""),
+                        safe_get(negotiation, "vacancy", "id") or negotiation.get("vacancy_id"),
+                        safe_get(negotiation, "resume", "id") or negotiation.get("resume_id"),
+                        safe_get(negotiation, "state", "id")
+                        or negotiation.get("state")
+                        or negotiation.get("status"),
+                        unread_messages,
+                        negotiation.get("updated_at"),
+                        json_dumps(negotiation),
+                        synced_at,
+                    ),
+                )
+        return len(negotiations)
+
+    def mark_oauth_sync(self, provider: str = "hh_user_oauth") -> None:
+        meta = self.get_oauth_meta(provider)
+        if not meta:
+            return
+        meta["last_sync_at"] = datetime.now(timezone.utc).isoformat()
+        self.save_oauth_meta(provider, meta)
+
+    def get_hh_sync_summary(self) -> dict[str, Any]:
+        with self.connect() as connection:
+            profile_count = connection.execute("SELECT COUNT(*) FROM hh_profiles").fetchone()[0]
+            resume_count = connection.execute("SELECT COUNT(*) FROM hh_resumes").fetchone()[0]
+            negotiation_count = connection.execute(
+                "SELECT COUNT(*) FROM hh_negotiations"
+            ).fetchone()[0]
+            active_negotiations = connection.execute(
+                "SELECT COUNT(*) FROM hh_negotiations WHERE status IS NOT NULL AND status != ''"
+            ).fetchone()[0]
+            reconciled = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM hh_negotiations n
+                JOIN vacancies v ON v.id = n.vacancy_id
+                """
+            ).fetchone()[0]
+        return {
+            "profiles": profile_count,
+            "resumes": resume_count,
+            "negotiations": negotiation_count,
+            "negotiations_with_status": active_negotiations,
+            "negotiations_matched_local_vacancies": reconciled,
+        }
 
     def _require_vacancy(self, vacancy_id: str) -> None:
         if not self.vacancy_exists(vacancy_id):

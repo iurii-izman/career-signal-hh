@@ -20,10 +20,12 @@ from .commands import (
     doctor,
     export,
     health,
+    hh_sync,
     import_vacancy,
     llm,
     maintenance,
     notion_sync,
+    oauth,
     presets,
     profiles,
     quality,
@@ -339,6 +341,8 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_search_lab_parser(sub)
     build_campaigns_parser(sub)
     build_notion_sync_parser(sub)
+    build_oauth_parser(sub)
+    build_hh_sync_parser(sub)
     build_import_parser(sub)
     build_report_parser(sub)
     build_llm_parser(sub)
@@ -583,6 +587,36 @@ def build_notion_sync_parser(sub: argparse._SubParsersAction) -> None:
     replay.add_argument("--outbox-id", type=int, required=True)
     replay.add_argument("--dry-run", action="store_true")
     replay.set_defaults(func=notion_sync.command_notion_sync_replay)
+
+
+def build_oauth_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("oauth")
+    ps = p.add_subparsers(dest="oauth_command", required=True)
+
+    ps.add_parser("status").set_defaults(func=oauth.command_oauth_status)
+
+    login = ps.add_parser("login")
+    login.add_argument("--code", help="Authorization code received from HH redirect")
+    login.add_argument("--open-browser", action="store_true")
+    login.set_defaults(func=oauth.command_oauth_login)
+
+    ps.add_parser("refresh").set_defaults(func=oauth.command_oauth_refresh)
+    ps.add_parser("revoke-local").set_defaults(func=oauth.command_oauth_revoke_local)
+
+
+def build_hh_sync_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("hh-sync")
+    ps = p.add_subparsers(dest="hh_sync_command", required=True)
+
+    ps.add_parser("me").set_defaults(func=hh_sync.command_hh_sync_me)
+    ps.add_parser("resumes").set_defaults(func=hh_sync.command_hh_sync_resumes)
+
+    negotiations = ps.add_parser("negotiations")
+    negotiations.add_argument("--status")
+    negotiations.add_argument("--per-page", type=int, default=50)
+    negotiations.set_defaults(func=hh_sync.command_hh_sync_negotiations)
+
+    ps.add_parser("reconcile").set_defaults(func=hh_sync.command_hh_sync_reconcile)
 
 
 def build_report_parser(sub: argparse._SubParsersAction) -> None:

@@ -67,12 +67,26 @@ def json_loads(value: str | None, default: Any = None) -> Any:
         return default
 
 
+def mask_secret(value: str | None, *, visible: int = 4) -> str:
+    """Return a stable masked representation of a secret."""
+    token = (value or "").strip()
+    if not token:
+        return "not set"
+    if len(token) <= visible * 2:
+        return "*" * len(token)
+    return token[:visible] + "*" * (len(token) - (visible * 2)) + token[-visible:]
+
+
 def redact_secrets(value: str | None) -> str | None:
     """Replace known token values from text with a fixed placeholder."""
     if value is None:
         return None
     text = value
-    for env_name in ("HH_APP_ACCESS_TOKEN", "HH_USER_ACCESS_TOKEN"):
+    for env_name in (
+        "HH_APP_ACCESS_TOKEN",
+        "HH_USER_ACCESS_TOKEN",
+        "HH_CLIENT_SECRET",
+    ):
         token = os.getenv(env_name, "").strip()
         if token:
             text = text.replace(token, "[REDACTED]")

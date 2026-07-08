@@ -398,3 +398,14 @@ class HHClient:
 
     def get_professional_roles(self) -> dict[str, Any]:
         return self._request("/professional_roles", request_type="dict")
+
+    def get_my_resumes(self) -> dict[str, Any]:
+        return self._request("/resumes/mine", request_type="dict")
+
+    def get_negotiations(
+        self, *, status: str | None = None, per_page: int = 50
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"per_page": per_page}
+        if status:
+            params["status"] = status
+        return self._request("/negotiations", params=params, request_type="dict")

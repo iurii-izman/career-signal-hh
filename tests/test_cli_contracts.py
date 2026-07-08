@@ -250,6 +250,23 @@ def test_notion_sync_replay_parses() -> None:
     assert args.dry_run is True
 
 
+# ── oauth / hh-sync ─────────────────────────────────────────────────────────
+
+
+def test_oauth_login_parses() -> None:
+    args = parse_args(["oauth", "login", "--code", "abc123", "--open-browser"])
+    assert args.oauth_command == "login"
+    assert args.code == "abc123"
+    assert args.open_browser is True
+
+
+def test_hh_sync_negotiations_parses() -> None:
+    args = parse_args(["hh-sync", "negotiations", "--status", "active", "--per-page", "25"])
+    assert args.hh_sync_command == "negotiations"
+    assert args.status == "active"
+    assert args.per_page == 25
+
+
 # ── scheduler ────────────────────────────────────────────────────────────────
 
 

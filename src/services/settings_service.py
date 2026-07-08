@@ -11,6 +11,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from ..utils import mask_secret
+
 ENV_PATH = ".env"
 CANDIDATE_PATH = "config/candidate.yaml"
 BACKUPS_DIR = Path("config/backups")
@@ -49,7 +51,7 @@ def _backup_env() -> Path:
 def get_settings() -> dict[str, Any]:
     """Return all settings, never exposing full token."""
     load_dotenv()
-    masked_tokens = {key: _mask_token(os.getenv(key, "")) for key in TOKEN_KEYS}
+    masked_tokens = {key: mask_secret(os.getenv(key, "")) for key in TOKEN_KEYS}
 
     return {
         "env": {
@@ -67,14 +69,6 @@ def get_settings() -> dict[str, Any]:
         "search_modes": _load_search_modes(),
         "health": _get_health_snapshot(),
     }
-
-
-def _mask_token(token: str) -> str:
-    if not token:
-        return "not set"
-    if len(token) <= 8:
-        return "*" * len(token)
-    return token[:4] + "*" * (len(token) - 8) + token[-4:]
 
 
 def _load_candidate() -> dict[str, Any]:
