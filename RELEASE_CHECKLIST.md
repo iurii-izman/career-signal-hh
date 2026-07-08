@@ -22,8 +22,8 @@ Before tagging a release, verify:
 - [ ] `README.md` updated with new features
 - [ ] `CHANGELOG.md` updated
 - [ ] Baseline docs updated when roadmap/current-state changed:
-  - `docs/CURRENT_STATE_2026-07-08.md`
-  - `docs/PHASE2_ROADMAP_2026-07-08.md`
+  - `docs/CURRENT_STATE_2026-07-09.md`
+  - `docs/PHASE3_ROADMAP_2026-07-09.md`
 
 ## Post-release
 

@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- documentation baseline refreshed for post-L state;
+- added `docs/CURRENT_STATE_2026-07-09.md`;
+- added `docs/PHASE3_ROADMAP_2026-07-09.md`;
+- added `docs/EPIC_L_SYNC_MATURITY_DECISION_2026-07-09.md`;
+- aligned README and release checklist with Phase 2 complete / Phase 3 ready baseline.
 
 ## v0.7.0 (2026-07-08)
 - Tail-0 stabilization and online-first auth baseline

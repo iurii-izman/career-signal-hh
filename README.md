@@ -34,32 +34,34 @@ CareerSignal HH не отправляет отклики, не делает auto
 
 ## Текущее состояние
 
-На 8 июля 2026 проект находится в состоянии **Phase 1 complete**:
+На 9 июля 2026 проект находится в состоянии **Phase 2 complete / Phase 3 ready**:
 
 - online-first baseline стабилизирован;
-- Tail-0 и Epics A-H завершены;
+- Tail-0 и Epics A-L реализованы;
 - полный daily loop `search -> queue -> briefing -> apply-pack -> apply-assist -> manual apply`
   уже существует;
-- `managed OAuth V2` реализован как additive read-only sync слой;
-- локальный web UI и cockpit являются рабочей операционной поверхностью;
-- Epic K перенёс operator control plane функции в UI поверх CLI baseline.
+- `managed OAuth V2` и read-only HH sync реализованы как additive operator слой;
+- локальный web UI, cockpit и operator control plane являются рабочей
+  операционной поверхностью;
+- desktop-ready Windows app runner уже существует поверх локального UI;
+- HH sync maturity доведён до pagination + messages + actionable reconcile.
 
-Короткий статус зафиксирован в:
+Актуальный baseline зафиксирован в:
 
-- [docs/CURRENT_STATE_2026-07-08.md](C:/Dev/career-signal-hh/docs/CURRENT_STATE_2026-07-08.md)
-- [docs/PHASE2_ROADMAP_2026-07-08.md](C:/Dev/career-signal-hh/docs/PHASE2_ROADMAP_2026-07-08.md)
+- [docs/CURRENT_STATE_2026-07-09.md](C:/Dev/career-signal-hh/docs/CURRENT_STATE_2026-07-09.md)
+- [docs/PHASE3_ROADMAP_2026-07-09.md](C:/Dev/career-signal-hh/docs/PHASE3_ROADMAP_2026-07-09.md)
 
-Следующая реализационная волна должна идти не в ещё один "долгий хвост", а в
-productization и operator maturity:
-
-- Epic I — release hardening;
-- Epic J — desktop packaging;
-- Epic K — operator control plane in UI;
-- Epic L — sync maturity.
-
-Решение по Epic K зафиксировано в:
+Решения по последним фазам зафиксированы в:
 
 - [docs/EPIC_K_OPERATOR_CONTROL_PLANE_DECISION_2026-07-09.md](C:/Dev/career-signal-hh/docs/EPIC_K_OPERATOR_CONTROL_PLANE_DECISION_2026-07-09.md)
+- [docs/EPIC_L_SYNC_MATURITY_DECISION_2026-07-09.md](C:/Dev/career-signal-hh/docs/EPIC_L_SYNC_MATURITY_DECISION_2026-07-09.md)
+
+Следующая реализационная волна должна идти не в новые случайные хвосты, а в:
+
+- consolidation and release freeze;
+- live activation of OAuth / HH sync / outbox;
+- operator productivity improvements;
+- selective architecture relief and packaging maturity.
 
 ## Установка
 
