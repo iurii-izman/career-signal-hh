@@ -348,6 +348,10 @@ python -m src.main ui --open-browser
 - счётчиками: всего вакансий, новых за 24h, pending queue, strong matches;
 - статусами applied/interview/offer;
 - последним search run, backup, export;
+- pipeline counters: sourced, scored, shortlisted, briefed, drafted, applied, interview, offer;
+- queue health: missing briefing, interesting without draft, follow-up due, risky queue, outbox pending/failed;
+- risk buckets, preset performance и recent activity из `vacancy_events`;
+- action context по strong matches без briefing и follow-up due вакансиям;
 - кнопками действий: Health Check, Daily Autopilot, Review Queue,
   Export Cockpit, Generate Analytics, Settings.
 
@@ -824,11 +828,20 @@ python -m src.main cockpit open
   dedupe queue, calibration) с reason и copy-paste командами.
 - **Today's Queue** — таблица с score, decision, keywords, risks,
   cluster badge, apply-pack link, copyable review commands.
+- **Pipeline** — sourced → scored → shortlisted → briefed → drafted → applied/interview/offer.
+- **Queue Health** — pending new, strong new, missing briefing,
+  interesting without draft, follow-up due, risky queue, outbox pending/failed.
 - **Preset Performance** — эффективность пресетов.
+- **Risk Buckets** — operational risk groups на основе `risk_flags_json`
+  и `quality_flags_json` для текущей очереди.
 - **Review Funnel** — воронка статусов.
+- **Briefing & Sync** — coverage по `briefing_reports` и состояние `integration_outbox`.
+- **Action Context** — top actionable vacancies: strong matches без briefing
+  и applied/interview без следующего шага.
 - **Generated Files** — статус всех export-файлов с датами
   и командами для регенерации.
 - **Latest Search Runs** — последние 5 поисковых запусков.
+- **Recent Activity** — последние события из `vacancy_events`.
 - **Data Quality** — кластеры, дубликаты, aliases.
 
 Без внешних зависимостей — весь CSS и JS инлайн, не требует

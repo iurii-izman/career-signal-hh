@@ -343,6 +343,20 @@ async def api_vacancy_apply_pack(vacancy_id: str) -> JSONResponse:
         )
 
 
+@router.post("/api/vacancies/{vacancy_id}/briefing")
+async def api_vacancy_briefing(vacancy_id: str) -> JSONResponse:
+    """Generate briefing for a single vacancy and persist it."""
+    try:
+        result = review_service.generate_briefing_for(vacancy_id)
+        status_code = 200 if result["ok"] else 404 if result.get("error_type") == "not_found" else 500
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=500,
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # API: Vacancy detail (enhanced)
 # ═══════════════════════════════════════════════════════════════════════

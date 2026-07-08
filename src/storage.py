@@ -948,6 +948,347 @@ class Storage:
             "oldest_failed_at": oldest_failed["updated_at"] if oldest_failed else None,
         }
 
+    def get_operational_metrics(
+        self,
+        *,
+        queue_score: int = 70,
+        strong_score: int = 85,
+        recent_limit: int = 12,
+        attention_limit: int = 5,
+    ) -> dict[str, Any]:
+        """Return dashboard/cockpit aggregates based on queue, events, briefings, and outbox."""
+        with self.connect() as connection:
+            pipeline_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS sourced,
+                    SUM(CASE WHEN s.vacancy_id IS NOT NULL THEN 1 ELSE 0 END) AS scored,
+                    SUM(CASE WHEN sd.decision IN ('strong_match', 'queue', 'review_later') THEN 1 ELSE 0 END) AS shortlisted,
+                    SUM(CASE WHEN br.vacancy_id IS NOT NULL THEN 1 ELSE 0 END) AS briefed,
+                    SUM(CASE WHEN r.cover_letter_draft IS NOT NULL AND TRIM(r.cover_letter_draft) != '' THEN 1 ELSE 0 END) AS drafted,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'applied' THEN 1 ELSE 0 END) AS applied,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'interview' THEN 1 ELSE 0 END) AS interview,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'offer' THEN 1 ELSE 0 END) AS offer
+                FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                LEFT JOIN (
+                    SELECT vacancy_id, MAX(updated_at) AS updated_at
+                    FROM briefing_reports
+                    GROUP BY vacancy_id
+                ) br ON br.vacancy_id = v.id
+                """
+            ).fetchone()
+
+            queue_row = connection.execute(
+                """
+                SELECT
+                    SUM(CASE
+                        WHEN COALESCE(s.total_score, 0) >= ? AND COALESCE(r.status, 'new') = 'new'
+                        THEN 1 ELSE 0 END
+                    ) AS pending_new,
+                    SUM(CASE
+                        WHEN sd.decision = 'strong_match' AND COALESCE(r.status, 'new') = 'new'
+                        THEN 1 ELSE 0 END
+                    ) AS strong_new,
+                    SUM(CASE
+                        WHEN sd.decision = 'strong_match'
+                             AND COALESCE(r.status, 'new') IN ('new', 'interesting', 'maybe')
+                             AND br.vacancy_id IS NULL
+                        THEN 1 ELSE 0 END
+                    ) AS missing_briefing,
+                    SUM(CASE
+                        WHEN COALESCE(r.status, 'new') = 'interesting'
+                             AND (r.cover_letter_draft IS NULL OR TRIM(r.cover_letter_draft) = '')
+                        THEN 1 ELSE 0 END
+                    ) AS interesting_without_draft,
+                    SUM(CASE
+                        WHEN COALESCE(r.status, 'new') IN ('applied', 'interview')
+                             AND (r.next_action_at IS NULL OR date(r.next_action_at) <= date('now'))
+                        THEN 1 ELSE 0 END
+                    ) AS follow_up_due,
+                    SUM(CASE
+                        WHEN COALESCE(s.total_score, 0) >= ?
+                             AND sd.risk_flags_json IS NOT NULL
+                             AND sd.risk_flags_json != '[]'
+                        THEN 1 ELSE 0 END
+                    ) AS risky_queue,
+                    SUM(CASE
+                        WHEN COALESCE(s.total_score, 0) >= ?
+                             AND (v.salary_from IS NOT NULL OR v.salary_to IS NOT NULL)
+                        THEN 1 ELSE 0 END
+                    ) AS with_salary,
+                    SUM(CASE
+                        WHEN COALESCE(s.total_score, 0) >= ?
+                             AND s.work_format_flags_json LIKE '%remote%'
+                        THEN 1 ELSE 0 END
+                    ) AS remote_queue
+                FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                LEFT JOIN (
+                    SELECT vacancy_id
+                    FROM briefing_reports
+                    GROUP BY vacancy_id
+                ) br ON br.vacancy_id = v.id
+                """,
+                (queue_score, queue_score, queue_score, queue_score),
+            ).fetchone()
+
+            status_rows = connection.execute(
+                """
+                SELECT COALESCE(r.status, 'new') AS status, COUNT(*) AS count
+                FROM vacancies v
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                GROUP BY COALESCE(r.status, 'new')
+                ORDER BY count DESC, status ASC
+                """
+            ).fetchall()
+
+            risk_buckets = [
+                {
+                    "key": "exclude_match",
+                    "label": "Exclude match",
+                    "count": connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM score_details sd
+                        LEFT JOIN scores s ON s.vacancy_id = sd.vacancy_id
+                        WHERE COALESCE(s.total_score, sd.total_score, 0) >= ?
+                          AND sd.risk_flags_json LIKE '%exclude_match%'
+                        """,
+                        (queue_score,),
+                    ).fetchone()[0],
+                },
+                {
+                    "key": "penalty_match",
+                    "label": "Penalty match",
+                    "count": connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM score_details sd
+                        LEFT JOIN scores s ON s.vacancy_id = sd.vacancy_id
+                        WHERE COALESCE(s.total_score, sd.total_score, 0) >= ?
+                          AND sd.risk_flags_json LIKE '%penalty_match%'
+                        """,
+                        (queue_score,),
+                    ).fetchone()[0],
+                },
+                {
+                    "key": "exclude_title",
+                    "label": "Exclude in title",
+                    "count": connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM score_details sd
+                        LEFT JOIN scores s ON s.vacancy_id = sd.vacancy_id
+                        WHERE COALESCE(s.total_score, sd.total_score, 0) >= ?
+                          AND sd.risk_flags_json LIKE '%exclude_title%'
+                        """,
+                        (queue_score,),
+                    ).fetchone()[0],
+                },
+                {
+                    "key": "remote_unclear",
+                    "label": "Remote unclear",
+                    "count": connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM score_details sd
+                        LEFT JOIN scores s ON s.vacancy_id = sd.vacancy_id
+                        WHERE COALESCE(s.total_score, sd.total_score, 0) >= ?
+                          AND sd.quality_flags_json LIKE '%remote_unclear%'
+                        """,
+                        (queue_score,),
+                    ).fetchone()[0],
+                },
+                {
+                    "key": "work_format",
+                    "label": "Onsite or hybrid",
+                    "count": connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM score_details sd
+                        LEFT JOIN scores s ON s.vacancy_id = sd.vacancy_id
+                        WHERE COALESCE(s.total_score, sd.total_score, 0) >= ?
+                          AND sd.risk_flags_json LIKE '%work:%'
+                        """,
+                        (queue_score,),
+                    ).fetchone()[0],
+                },
+            ]
+
+            preset_rows = connection.execute(
+                """
+                SELECT
+                    COALESCE(sd.preset_name, s.best_profile, v.source_profile, 'unknown') AS preset,
+                    COUNT(*) AS total,
+                    ROUND(AVG(COALESCE(s.total_score, sd.total_score, 0)), 1) AS avg_score,
+                    SUM(CASE WHEN sd.decision = 'strong_match' THEN 1 ELSE 0 END) AS strong,
+                    SUM(CASE WHEN sd.decision = 'queue' THEN 1 ELSE 0 END) AS queue,
+                    SUM(CASE WHEN br.vacancy_id IS NOT NULL THEN 1 ELSE 0 END) AS briefed,
+                    SUM(CASE WHEN r.cover_letter_draft IS NOT NULL AND TRIM(r.cover_letter_draft) != '' THEN 1 ELSE 0 END) AS drafted,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'applied' THEN 1 ELSE 0 END) AS applied,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'interview' THEN 1 ELSE 0 END) AS interview,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'offer' THEN 1 ELSE 0 END) AS offer,
+                    SUM(CASE WHEN COALESCE(r.status, 'new') = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+                    SUM(CASE WHEN sd.risk_flags_json IS NOT NULL AND sd.risk_flags_json != '[]' THEN 1 ELSE 0 END) AS risky
+                FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                LEFT JOIN (
+                    SELECT vacancy_id
+                    FROM briefing_reports
+                    GROUP BY vacancy_id
+                ) br ON br.vacancy_id = v.id
+                GROUP BY preset
+                ORDER BY strong DESC, applied DESC, avg_score DESC, total DESC
+                """
+            ).fetchall()
+
+            recent_rows = connection.execute(
+                """
+                SELECT
+                    e.created_at,
+                    e.event_type,
+                    e.vacancy_id,
+                    e.old_status,
+                    e.new_status,
+                    e.source,
+                    v.name,
+                    v.employer_name
+                FROM vacancy_events e
+                JOIN vacancies v ON v.id = e.vacancy_id
+                ORDER BY e.created_at DESC, e.id DESC
+                LIMIT ?
+                """,
+                (recent_limit,),
+            ).fetchall()
+
+            briefing_needed_rows = connection.execute(
+                """
+                SELECT
+                    'briefing_needed' AS kind,
+                    v.id,
+                    v.name,
+                    v.employer_name,
+                    COALESCE(s.total_score, sd.total_score, 0) AS total_score,
+                    COALESCE(sd.decision, 'unknown') AS decision,
+                    COALESCE(r.status, 'new') AS review_status,
+                    NULL AS next_action_at
+                FROM vacancies v
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                LEFT JOIN (
+                    SELECT vacancy_id
+                    FROM briefing_reports
+                    GROUP BY vacancy_id
+                ) br ON br.vacancy_id = v.id
+                WHERE sd.decision = 'strong_match'
+                  AND COALESCE(r.status, 'new') IN ('new', 'interesting', 'maybe')
+                  AND br.vacancy_id IS NULL
+                ORDER BY COALESCE(s.total_score, sd.total_score, 0) DESC, v.published_at DESC
+                LIMIT ?
+                """,
+                (attention_limit,),
+            ).fetchall()
+
+            follow_up_rows = connection.execute(
+                """
+                SELECT
+                    'follow_up_due' AS kind,
+                    v.id,
+                    v.name,
+                    v.employer_name,
+                    COALESCE(s.total_score, 0) AS total_score,
+                    COALESCE(sd.decision, 'unknown') AS decision,
+                    COALESCE(r.status, 'new') AS review_status,
+                    r.next_action_at
+                FROM vacancies v
+                JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                LEFT JOIN scores s ON s.vacancy_id = v.id
+                LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+                WHERE COALESCE(r.status, 'new') IN ('applied', 'interview')
+                  AND (r.next_action_at IS NULL OR date(r.next_action_at) <= date('now'))
+                ORDER BY COALESCE(r.next_action_at, r.applied_at, v.last_seen_at) ASC
+                LIMIT ?
+                """,
+                (attention_limit,),
+            ).fetchall()
+
+            briefing_summary = connection.execute(
+                """
+                SELECT
+                    COUNT(DISTINCT vacancy_id) AS saved,
+                    SUM(CASE WHEN date(updated_at) >= date('now', '-7 day') THEN 1 ELSE 0 END) AS updated_7d
+                FROM briefing_reports
+                """
+            ).fetchone()
+
+        outbox = self.summarize_outbox()
+        counts = outbox.get("counts", {})
+        attention_rows = [dict(row) for row in briefing_needed_rows] + [
+            dict(row) for row in follow_up_rows
+        ]
+        attention_rows.sort(
+            key=lambda row: (
+                0 if row.get("kind") == "follow_up_due" else 1,
+                -(row.get("total_score") or 0),
+                row.get("next_action_at") or "",
+            )
+        )
+
+        return {
+            "pipeline": {
+                key: int((pipeline_row[key] or 0) if pipeline_row is not None else 0)
+                for key in (
+                    "sourced",
+                    "scored",
+                    "shortlisted",
+                    "briefed",
+                    "drafted",
+                    "applied",
+                    "interview",
+                    "offer",
+                )
+            },
+            "queue_health": {
+                **{
+                    key: int((queue_row[key] or 0) if queue_row is not None else 0)
+                    for key in (
+                        "pending_new",
+                        "strong_new",
+                        "missing_briefing",
+                        "interesting_without_draft",
+                        "follow_up_due",
+                        "risky_queue",
+                        "with_salary",
+                        "remote_queue",
+                    )
+                },
+                "outbox_pending": int(counts.get("pending", 0)),
+                "outbox_failed": int(counts.get("failed", 0)),
+            },
+            "status_buckets": [dict(row) for row in status_rows],
+            "risk_buckets": [
+                {**bucket, "count": int(bucket["count"] or 0)} for bucket in risk_buckets
+            ],
+            "preset_performance": [dict(row) for row in preset_rows],
+            "recent_activity": [dict(row) for row in recent_rows],
+            "attention_items": attention_rows[: attention_limit * 2],
+            "briefing_summary": {
+                "saved": int((briefing_summary["saved"] or 0) if briefing_summary else 0),
+                "updated_7d": int(
+                    (briefing_summary["updated_7d"] or 0) if briefing_summary else 0
+                ),
+            },
+            "outbox_summary": outbox,
+        }
+
     def list_vacancies_for_rescore(
         self, limit: int | None = None, preset: str | None = None
     ) -> list[dict[str, Any]]:

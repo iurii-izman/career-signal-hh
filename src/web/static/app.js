@@ -144,6 +144,11 @@
         })
         .join("");
     }
+    renderPipeline(data.pipeline || {});
+    renderQueueHealth(data.queue_health || {});
+    renderAttention(data.attention_items || []);
+    renderRiskBuckets(data.risk_buckets || []);
+    renderPresetPerformance(data.preset_performance || []);
     // Follow-ups
     var fu = document.getElementById("follow-ups-panel");
     if (fu && data.follow_ups && data.follow_ups.length) {
@@ -165,6 +170,9 @@
         })
         .join("");
     }
+    if (fu && (!data.follow_ups || !data.follow_ups.length)) {
+      fu.innerHTML = '<div class="log-entry muted">No pending follow-ups</div>';
+    }
     // Reports
     var rp = document.getElementById("reports-panel");
     if (rp && data.reports && data.reports.length) {
@@ -180,70 +188,209 @@
         })
         .join(" ");
     }
+    if (rp && (!data.reports || !data.reports.length)) {
+      rp.innerHTML = '<div class="log-entry muted">No reports found</div>';
+    }
+    renderActivity(data.recent_activity || []);
   }
   function getActionPlan(data) {
-    var p = [];
-    if (data.pending_queue > 0)
-      p.push({
-        action: "review-queue-link",
-        label: "Review " + data.pending_queue + " pending vacancies",
-        priority: "high",
+    if (data.action_plan && data.action_plan.length) {
+      return data.action_plan.map(function (item) {
+        var actionMap = {
+          review_queue: "review-queue-link",
+          run_autopilot: "run-autopilot",
+          run_backup: "run-backup",
+          follow_up: "follow-up-scroll",
+          calibrate: "calibrate-job",
+          quality: "quality-cluster-job",
+          run_health: "run-health",
+          briefing_focus: "attention-scroll",
+          outbox_focus: "attention-scroll",
+        };
+        return {
+          action: actionMap[item.action] || item.action,
+          label: item.label,
+          priority: item.priority || "low",
+        };
       });
-    if (!data.latest_search_run)
-      p.push({
-        action: "run-autopilot",
-        label: "Run first autopilot daily scan",
-        priority: "high",
-      });
-    else {
-      try {
-        var h = Math.round(
-          (Date.now() - new Date(data.latest_search_run).getTime()) / 3600000,
-        );
-        if (h > 24)
-          p.push({
-            action: "run-autopilot",
-            label: "Search stale (" + h + "h ago)",
-            priority: "medium",
-          });
-      } catch (e) {}
     }
-    if (data.backup_overdue)
-      p.push({
-        action: "run-backup",
-        label: "Backup overdue",
-        priority: "high",
-      });
-    if (!data.latest_backup)
-      p.push({
-        action: "run-backup",
-        label: "Create first backup",
-        priority: "medium",
-      });
-    if (data.follow_ups && data.follow_ups.length)
-      p.push({
-        action: "follow-up-scroll",
-        label: "Follow up " + data.follow_ups.length + " applied",
-        priority: "medium",
-      });
-    if (data.calibration_count > 0)
-      p.push({
-        action: "calibrate-job",
-        label: "Review " + data.calibration_count + " calibration suggestions",
-        priority: "low",
-      });
-    if (data.cluster_count > 0)
-      p.push({
-        action: "quality-cluster-job",
-        label: "Review " + data.cluster_count + " duplicate clusters",
-        priority: "low",
-      });
-    p.push({
-      action: "run-health",
-      label: "Run health check",
-      priority: "low",
-    });
-    return p;
+    return [];
+  }
+  function renderPipeline(pipeline) {
+    var el = document.getElementById("pipeline-cards");
+    if (!el) return;
+    var items = [
+      ["Sourced", pipeline.sourced || 0],
+      ["Scored", pipeline.scored || 0],
+      ["Shortlisted", pipeline.shortlisted || 0],
+      ["Briefed", pipeline.briefed || 0],
+      ["Drafted", pipeline.drafted || 0],
+      ["Applied", pipeline.applied || 0],
+      ["Interview", pipeline.interview || 0],
+      ["Offer", pipeline.offer || 0],
+    ];
+    el.innerHTML = items
+      .map(function (row) {
+        return (
+          '<div class="card mini-card"><div class="card-value">' +
+          row[1] +
+          '</div><div class="card-label">' +
+          row[0] +
+          "</div></div>"
+        );
+      })
+      .join("");
+  }
+  function renderQueueHealth(health) {
+    var el = document.getElementById("queue-health-cards");
+    if (!el) return;
+    var items = [
+      ["Pending new", health.pending_new || 0],
+      ["Strong new", health.strong_new || 0],
+      ["Missing briefing", health.missing_briefing || 0],
+      ["Interesting no draft", health.interesting_without_draft || 0],
+      ["Follow-up due", health.follow_up_due || 0],
+      ["Risky queue", health.risky_queue || 0],
+      ["Outbox pending", health.outbox_pending || 0],
+      ["Outbox failed", health.outbox_failed || 0],
+    ];
+    el.innerHTML = items
+      .map(function (row) {
+        var cls = row[0].indexOf("failed") >= 0 || row[0].indexOf("Missing") >= 0 ? "warning" : "";
+        return (
+          '<div class="card mini-card"><div class="card-value ' +
+          cls +
+          '">' +
+          row[1] +
+          '</div><div class="card-label">' +
+          row[0] +
+          "</div></div>"
+        );
+      })
+      .join("");
+  }
+  function renderAttention(items) {
+    var el = document.getElementById("attention-panel");
+    if (!el) return;
+    if (!items.length) {
+      el.innerHTML = '<div class="log-entry muted">No immediate action context</div>';
+      return;
+    }
+    el.innerHTML = items
+      .map(function (item) {
+        var kind = item.kind === "follow_up_due" ? "Follow-up due" : "Briefing needed";
+        var actions =
+          item.kind === "follow_up_due"
+            ? '<div class="attention-actions"><a class="btn btn-sm" href="/vacancy/' +
+              item.id +
+              '">View</a><button class="btn btn-sm fu-followup" data-fuid="' +
+              item.id +
+              '">Follow-up tmrw</button></div>'
+            : '<div class="attention-actions"><a class="btn btn-sm" href="/vacancy/' +
+              item.id +
+              '">View</a><button class="btn btn-sm" data-vid="' +
+              item.id +
+              '" data-va="briefing">Generate Briefing</button><button class="btn btn-sm" data-vid="' +
+              item.id +
+              '" data-va="apply-pack">Apply Pack</button></div>';
+        return (
+          '<div class="attention-item"><div class="attention-main"><span class="attention-kind">' +
+          kind +
+          '</span><a class="attention-link" href="/vacancy/' +
+          item.id +
+          '">' +
+          escapeHtml(item.name || "") +
+          '</a><span class="attention-meta">' +
+          escapeHtml(item.employer_name || "") +
+          " · score " +
+          (item.total_score || 0) +
+          "</span></div>" +
+          actions +
+          '<div class="attention-side">' +
+          escapeHtml(item.review_status || "new") +
+          "</div></div>"
+        );
+      })
+      .join("");
+  }
+  function renderRiskBuckets(items) {
+    var el = document.getElementById("risk-buckets-panel");
+    if (!el) return;
+    if (!items.length) {
+      el.innerHTML = '<div class="log-entry muted">No risk data yet</div>';
+      return;
+    }
+    el.innerHTML = items
+      .map(function (item) {
+        return (
+          '<div class="bucket-card"><div class="bucket-value">' +
+          (item.count || 0) +
+          '</div><div class="bucket-label">' +
+          escapeHtml(item.label || item.key || "") +
+          "</div></div>"
+        );
+      })
+      .join("");
+  }
+  function renderPresetPerformance(items) {
+    var el = document.getElementById("preset-performance-panel");
+    if (!el) return;
+    if (!items.length) {
+      el.innerHTML = '<div class="log-entry muted">No preset data yet</div>';
+      return;
+    }
+    el.innerHTML =
+      '<table class="ops-table"><tr><th>Preset</th><th>Total</th><th>Avg</th><th>Strong</th><th>Briefed</th><th>Applied</th><th>Offer</th><th>Risky</th></tr>' +
+      items
+        .slice(0, 8)
+        .map(function (item) {
+          return (
+            "<tr><td>" +
+            escapeHtml(item.preset || "unknown") +
+            "</td><td>" +
+            (item.total || 0) +
+            "</td><td>" +
+            (item.avg_score || 0) +
+            "</td><td>" +
+            (item.strong || 0) +
+            "</td><td>" +
+            (item.briefed || 0) +
+            "</td><td>" +
+            (item.applied || 0) +
+            "</td><td>" +
+            (item.offer || 0) +
+            "</td><td>" +
+            (item.risky || 0) +
+            "</td></tr>"
+          );
+        })
+        .join("") +
+      "</table>";
+  }
+  function renderActivity(items) {
+    var el = document.getElementById("activity-panel");
+    if (!el) return;
+    if (!items.length) {
+      el.innerHTML = '<div class="log-entry muted">No recent activity</div>';
+      return;
+    }
+    el.innerHTML = items
+      .map(function (item) {
+        return (
+          '<div class="activity-item"><span class="activity-time">' +
+          fmtDate(item.created_at) +
+          '</span><span class="activity-type">' +
+          escapeHtml(item.event_type || "") +
+          '</span><a class="activity-link" href="/vacancy/' +
+          item.vacancy_id +
+          '">' +
+          escapeHtml(item.name || item.vacancy_id || "") +
+          '</a><span class="activity-meta">' +
+          escapeHtml(item.new_status || item.employer_name || "") +
+          "</span></div>"
+        );
+      })
+      .join("");
   }
   function setStat(id, value, cls) {
     var el = $("#" + id);
@@ -454,6 +601,10 @@
         var el = document.getElementById("follow-ups-panel");
         if (el) el.scrollIntoView({ behavior: "smooth" });
         break;
+      case "attention-scroll":
+        var attention = document.getElementById("attention-panel");
+        if (attention) attention.scrollIntoView({ behavior: "smooth" });
+        break;
     }
     // Queue card actions from queue page
     var qbtn = e.target.closest("[data-va]");
@@ -472,6 +623,15 @@
             showToast(r.message, r.ok);
           },
         );
+      } else if (va === "briefing") {
+        apiPost("/api/vacancies/" + vid + "/briefing").then(function (r) {
+          showToast(r.message, r.ok);
+          addLog(
+            "Briefing: " + (r.message || ""),
+            r.ok ? "success" : "error",
+          );
+          if (r && r.ok) loadDashboard();
+        });
       } else if (va === "apply-pack") {
         apiPost("/api/vacancies/" + vid + "/apply-pack").then(function (r) {
           showToast(r.message, r.ok);
@@ -479,6 +639,7 @@
             "Apply pack: " + (r.message || ""),
             r.ok ? "success" : "error",
           );
+          if (r && r.ok) loadDashboard();
         });
       } else if (va === "applied") {
         apiPost("/api/vacancies/" + vid + "/applied", { date: "today" }).then(

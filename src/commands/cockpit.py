@@ -296,6 +296,47 @@ def _render_run_history(storage) -> str:
     return f"<table><tr><th>Time</th><th>Profile</th><th>Query</th><th>Found</th><th>Loaded</th><th>Error</th></tr>{rows}</table>"
 
 
+def _render_metric_cards(items: list[tuple[str, int]]) -> str:
+    return '<div class="row">' + "".join(
+        f'<div class="stat"><strong>{value}</strong><span>{label}</span></div>'
+        for label, value in items
+    ) + "</div>"
+
+
+def _render_attention_items(items: list[dict]) -> str:
+    if not items:
+        return "<p>No immediate action context.</p>"
+    html = '<div class="actions">'
+    for item in items:
+        kind = "Follow-up due" if item.get("kind") == "follow_up_due" else "Briefing needed"
+        html += f"""<div class="action">
+  <div class="action-head">{kind}: {item.get("name", "")}</div>
+  <div class="action-reason">{item.get("employer_name", "")} · score {item.get("total_score", 0)} · status {item.get("review_status", "new")}</div>
+</div>"""
+    html += "</div>"
+    return html
+
+
+def _render_recent_activity(items: list[dict]) -> str:
+    if not items:
+        return "<p>No recent activity.</p>"
+    rows = ""
+    for item in items:
+        rows += (
+            "<tr>"
+            f"<td>{(item.get('created_at') or '')[:19]}</td>"
+            f"<td>{item.get('event_type', '')}</td>"
+            f"<td>{item.get('name', '')[:50]}</td>"
+            f"<td>{item.get('employer_name', '')[:28]}</td>"
+            f"<td>{item.get('new_status', '') or '-'}</td>"
+            "</tr>"
+        )
+    return (
+        "<table><tr><th>Time</th><th>Event</th><th>Vacancy</th><th>Employer</th><th>Status</th></tr>"
+        f"{rows}</table>"
+    )
+
+
 # ── Main export ────────────────────────────────────────────────────────────
 
 
@@ -309,6 +350,7 @@ def command_cockpit_export(_: argparse.Namespace) -> int:
     stats = storage.stats()
     total = stats["total"]
     remote = stats["remote"]
+    operational = storage.get_operational_metrics()
 
     # Funnel
     funnel = {}
@@ -339,27 +381,55 @@ def command_cockpit_export(_: argparse.Namespace) -> int:
 
     # Presets
     preset_rows = []
-    with storage.connect() as conn:
-        pr = conn.execute(
-            """SELECT COALESCE(sd.preset_name, s.best_profile, 'unknown') preset,
-               COUNT(*) cnt, COALESCE(AVG(s.total_score),0) avg_score,
-               SUM(CASE WHEN sd.decision='strong_match' THEN 1 ELSE 0 END) strong,
-               SUM(CASE WHEN r.status='applied' THEN 1 ELSE 0 END) applied,
-               SUM(CASE WHEN r.status='rejected' THEN 1 ELSE 0 END) rejected
-            FROM vacancies v LEFT JOIN scores s ON s.vacancy_id=v.id
-            LEFT JOIN score_details sd ON sd.vacancy_id=v.id
-            LEFT JOIN vacancy_reviews r ON r.vacancy_id=v.id
-            GROUP BY preset ORDER BY cnt DESC"""
-        ).fetchall()
-        for row in pr:
-            preset_rows.append(
-                dict(zip(["preset", "cnt", "avg_score", "strong", "applied", "rejected"], row))
-            )
+    for row in operational.get("preset_performance", []):
+        preset_rows.append(row)
 
-    preset_html = "<table><tr><th>Preset</th><th>Total</th><th>Avg</th><th>Strong</th><th>Applied</th><th>Rejected</th></tr>"
+    preset_html = "<table><tr><th>Preset</th><th>Total</th><th>Avg</th><th>Strong</th><th>Briefed</th><th>Applied</th><th>Offer</th><th>Risky</th></tr>"
     for p in preset_rows:
-        preset_html += f"<tr><td>{p['preset']}</td><td>{p['cnt']}</td><td>{p['avg_score']:.0f}</td><td>{p['strong']}</td><td>{p['applied']}</td><td>{p['rejected']}</td></tr>"
+        preset_html += (
+            f"<tr><td>{p['preset']}</td><td>{p['total']}</td><td>{p['avg_score']:.0f}</td>"
+            f"<td>{p['strong']}</td><td>{p['briefed']}</td><td>{p['applied']}</td>"
+            f"<td>{p['offer']}</td><td>{p['risky']}</td></tr>"
+        )
     preset_html += "</table>"
+
+    pipeline_html = _render_metric_cards(
+        [
+            ("Sourced", operational.get("pipeline", {}).get("sourced", 0)),
+            ("Scored", operational.get("pipeline", {}).get("scored", 0)),
+            ("Shortlisted", operational.get("pipeline", {}).get("shortlisted", 0)),
+            ("Briefed", operational.get("pipeline", {}).get("briefed", 0)),
+            ("Drafted", operational.get("pipeline", {}).get("drafted", 0)),
+            ("Applied", operational.get("pipeline", {}).get("applied", 0)),
+            ("Interview", operational.get("pipeline", {}).get("interview", 0)),
+            ("Offer", operational.get("pipeline", {}).get("offer", 0)),
+        ]
+    )
+    queue_health_html = _render_metric_cards(
+        [
+            ("Pending New", operational.get("queue_health", {}).get("pending_new", 0)),
+            ("Strong New", operational.get("queue_health", {}).get("strong_new", 0)),
+            ("Missing Briefing", operational.get("queue_health", {}).get("missing_briefing", 0)),
+            (
+                "Interesting No Draft",
+                operational.get("queue_health", {}).get("interesting_without_draft", 0),
+            ),
+            ("Follow-up Due", operational.get("queue_health", {}).get("follow_up_due", 0)),
+            ("Risky Queue", operational.get("queue_health", {}).get("risky_queue", 0)),
+            ("Outbox Pending", operational.get("queue_health", {}).get("outbox_pending", 0)),
+            ("Outbox Failed", operational.get("queue_health", {}).get("outbox_failed", 0)),
+        ]
+    )
+    risk_html = _render_metric_cards(
+        [
+            (bucket.get("label", bucket.get("key", "?")), bucket.get("count", 0))
+            for bucket in operational.get("risk_buckets", [])
+        ]
+    )
+    attention_html = _render_attention_items(operational.get("attention_items", []))
+    activity_html = _render_recent_activity(operational.get("recent_activity", []))
+    briefing_summary = operational.get("briefing_summary", {})
+    outbox_summary = operational.get("outbox_summary", {})
 
     # Backup status
     backups_dir = Path("backups")
@@ -434,17 +504,40 @@ code{{background:#10182a;padding:1px 6px;border-radius:4px;font-size:11px;color:
 <h2>📋 Today's Queue (new, score≥70, top 15)</h2>
 {queue_html}
 
+<h2>🧭 Pipeline</h2>
+{pipeline_html}
+
+<h2>🚦 Queue Health</h2>
+{queue_health_html}
+
 <h2>📊 Preset Performance</h2>
 {preset_html if preset_rows else "<p>No preset data.</p>"}
 
+<h2>⚠️ Risk Buckets</h2>
+{risk_html}
+
 <h2>📈 Review Funnel</h2>
 <div class="row">{"".join(f'<div class="stat"><strong>{c}</strong><span>{k}</span></div>' for k, c in funnel.items())}</div>
+
+<h2>🧠 Briefing & Sync</h2>
+<div class="row">
+  <div class="stat"><strong>{briefing_summary.get("saved", 0)}</strong><span>Briefings saved</span></div>
+  <div class="stat"><strong>{briefing_summary.get("updated_7d", 0)}</strong><span>Briefings 7d</span></div>
+  <div class="stat"><strong>{outbox_summary.get("counts", {}).get("pending", 0)}</strong><span>Outbox pending</span></div>
+  <div class="stat"><strong>{outbox_summary.get("counts", {}).get("failed", 0)}</strong><span>Outbox failed</span></div>
+</div>
+
+<h2>🎯 Action Context</h2>
+{attention_html}
 
 <h2>📁 Generated Files</h2>
 {files_html}
 
 <h2>📜 Latest Search Runs</h2>
 {history_html}
+
+<h2>🕒 Recent Activity</h2>
+{activity_html}
 
 <h2>🔍 Data Quality</h2>
 <div class="row">

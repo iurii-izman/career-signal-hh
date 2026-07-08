@@ -253,6 +253,35 @@ def test_review_queue_endpoint_empty(empty_db: str) -> None:
     asyncio.run(_run())
 
 
+def test_briefing_endpoint_returns_ok(empty_db: str, monkeypatch) -> None:
+    """Briefing endpoint must return ok=True when generation succeeds."""
+    _init_db(empty_db)
+
+    import asyncio
+    import json
+
+    from src.web import routes
+
+    monkeypatch.setattr(
+        routes.review_service,
+        "generate_briefing_for",
+        lambda vacancy_id: {
+            "ok": True,
+            "message": f"Briefing generated for {vacancy_id}",
+            "data": {"vacancy_id": vacancy_id, "decision": "strong_match"},
+        },
+    )
+
+    async def _run():
+        resp = await routes.api_vacancy_briefing("vac-1")
+        body = json.loads(resp.body)
+        assert resp.status_code == 200
+        assert body["ok"] is True
+        assert body["data"]["vacancy_id"] == "vac-1"
+
+    asyncio.run(_run())
+
+
 # ── Health endpoint structure ────────────────────────────────────────────
 
 

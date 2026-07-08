@@ -19,10 +19,11 @@ def _get_storage() -> Storage:
 
 
 def get_dashboard_state() -> dict[str, Any]:
-    """Return dashboard snapshot with action flags, follow-ups, reports."""
+    """Return dashboard snapshot with operational counters and action context."""
     load_dotenv()
     storage = _get_storage()
     stats = storage.stats()
+    operational = storage.get_operational_metrics()
 
     # Queue counts
     try:
@@ -111,7 +112,7 @@ def get_dashboard_state() -> dict[str, Any]:
     # Available reports
     reports = _get_available_reports()
 
-    return {
+    state = {
         "total_vacancies": stats["total"],
         "new_24h": stats["new_24h"],
         "avg_score": round(stats["avg_score"], 1),
@@ -130,7 +131,18 @@ def get_dashboard_state() -> dict[str, Any]:
         "calibration_count": calibration_count,
         "follow_ups": follow_ups,
         "reports": reports,
+        "pipeline": operational.get("pipeline", {}),
+        "queue_health": operational.get("queue_health", {}),
+        "status_buckets": operational.get("status_buckets", []),
+        "risk_buckets": operational.get("risk_buckets", []),
+        "preset_performance": operational.get("preset_performance", []),
+        "recent_activity": operational.get("recent_activity", []),
+        "attention_items": operational.get("attention_items", []),
+        "briefing_summary": operational.get("briefing_summary", {}),
+        "outbox_summary": operational.get("outbox_summary", {}),
     }
+    state["action_plan"] = _build_action_plan(state)
+    return state
 
 
 def _get_follow_ups(storage: Storage) -> list[dict[str, Any]]:
@@ -288,8 +300,12 @@ def get_recent_runs(limit: int = 5) -> list[dict[str, Any]]:
 
 
 def get_action_plan() -> list[dict[str, str]]:
-    plan: list[dict[str, str]] = []
     state = get_dashboard_state()
+    return state.get("action_plan", [])
+
+
+def _build_action_plan(state: dict[str, Any]) -> list[dict[str, str]]:
+    plan: list[dict[str, str]] = []
 
     if state["pending_queue"] > 0:
         plan.append(
@@ -359,6 +375,24 @@ def get_action_plan() -> list[dict[str, str]]:
                 "action": "quality",
                 "label": f"Review {state['cluster_count']} duplicate clusters",
                 "priority": "low",
+            }
+        )
+    missing_briefing = int(state.get("queue_health", {}).get("missing_briefing", 0))
+    if missing_briefing > 0:
+        plan.append(
+            {
+                "action": "briefing_focus",
+                "label": f"Create briefing for {missing_briefing} strong matches",
+                "priority": "high" if missing_briefing >= 3 else "medium",
+            }
+        )
+    outbox_failed = int(state.get("queue_health", {}).get("outbox_failed", 0))
+    if outbox_failed > 0:
+        plan.append(
+            {
+                "action": "outbox_focus",
+                "label": f"Resolve {outbox_failed} failed sync events",
+                "priority": "medium",
             }
         )
     plan.append(

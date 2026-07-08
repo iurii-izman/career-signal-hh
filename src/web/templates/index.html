@@ -132,6 +132,27 @@
                 <a href="/queue" class="btn btn-secondary">Review Queue</a>
             </div>
 
+            <div class="section-header"><h2>Pipeline</h2></div>
+            <div class="card-row" id="pipeline-cards"></div>
+
+            <div class="section-header"><h2>Queue Health</h2></div>
+            <div class="card-row" id="queue-health-cards"></div>
+
+            <div class="section-header"><h2>Attention Context</h2></div>
+            <div id="attention-panel">
+                <div class="log-entry muted">No immediate action context</div>
+            </div>
+
+            <div class="section-header"><h2>Risk Buckets</h2></div>
+            <div class="bucket-grid" id="risk-buckets-panel">
+                <div class="log-entry muted">No risk data yet</div>
+            </div>
+
+            <div class="section-header"><h2>Preset Performance</h2></div>
+            <div id="preset-performance-panel">
+                <div class="log-entry muted">No preset data yet</div>
+            </div>
+
             <!-- Follow-up panel -->
             <div class="section-header"><h2>Follow-ups</h2></div>
             <div id="follow-ups-panel">
@@ -142,6 +163,11 @@
             <div class="section-header"><h2>Reports</h2></div>
             <div id="reports-panel">
                 <div class="log-entry muted">No reports found</div>
+            </div>
+
+            <div class="section-header"><h2>Recent Activity</h2></div>
+            <div id="activity-panel">
+                <div class="log-entry muted">No recent activity</div>
             </div>
 
             <!-- Recent jobs -->

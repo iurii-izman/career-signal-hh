@@ -201,3 +201,66 @@ def generate_apply_pack_for(vacancy_id: str) -> dict[str, Any]:
         return preview
     except Exception as exc:
         return {"ok": False, "message": f"Apply pack failed: {exc}", "data": preview.get("data")}
+
+
+def generate_briefing_for(vacancy_id: str) -> dict[str, Any]:
+    """Generate briefing for a single vacancy and save it to review storage."""
+    import argparse
+
+    from ..commands.briefing import command_briefing
+
+    storage = _get_storage()
+    vacancy = storage.get_vacancy_full(vacancy_id)
+    if vacancy is None:
+        return {
+            "ok": False,
+            "message": f"Vacancy not found: {vacancy_id}",
+            "error_type": "not_found",
+            "data": None,
+        }
+
+    briefing_args = argparse.Namespace(
+        vacancy_id=vacancy_id,
+        top=None,
+        limit=None,
+        min_score=0,
+        decision=None,
+        preset=None,
+        status=None,
+        remote_only=False,
+        with_salary=False,
+        hide_risk=False,
+        new_only=False,
+        lang="ru",
+        format="all",
+        save_review=True,
+    )
+    try:
+        rc = command_briefing(briefing_args)
+        if rc != 0:
+            return {
+                "ok": False,
+                "message": f"Briefing failed for {vacancy_id}",
+                "error_type": "generation_failed",
+                "data": None,
+            }
+
+        report = storage.get_briefing_report(vacancy_id, lang="ru")
+        return {
+            "ok": True,
+            "message": f"Briefing generated for {vacancy_id}",
+            "data": {
+                "vacancy_id": vacancy_id,
+                "lang": "ru",
+                "decision": report.get("decision") if report else None,
+                "score_total": report.get("score_total") if report else None,
+                "updated_at": report.get("updated_at") if report else None,
+            },
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "message": f"Briefing failed: {exc}",
+            "error_type": "generation_failed",
+            "data": None,
+        }
