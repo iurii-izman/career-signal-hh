@@ -268,6 +268,37 @@ def test_sync_messages_saves_messages_and_tolerates_partial_failures(tmp_path: P
     assert summary["negotiations_with_messages"] == 1
 
 
+def test_sync_messages_by_negotiation_id_does_not_mark_success_on_failure(tmp_path: Path) -> None:
+    storage = _make_storage(tmp_path)
+
+    class FakeClient:
+        def get_negotiation_messages(self, negotiation_id: str, *, per_page=50, page=0):
+            raise RuntimeError(f"failed for {negotiation_id}")
+
+    class FakeOAuthManager:
+        def __init__(self) -> None:
+            self.synced = 0
+
+        def get_sync_client(self):
+            return FakeClient()
+
+        def mark_sync_success(self) -> None:
+            self.synced += 1
+
+    oauth = FakeOAuthManager()
+    service = HHSyncService(storage=storage, oauth_manager=oauth)
+
+    result = service.sync_messages(negotiation_id="neg-404")
+
+    assert result["count"] == 0
+    assert result["negotiations_considered"] == 1
+    assert result["negotiations_synced"] == 0
+    assert result["failed_negotiations"] == [
+        {"negotiation_id": "neg-404", "error": "failed for neg-404"}
+    ]
+    assert oauth.synced == 0
+
+
 def test_reconcile_reports_actionable_gaps(tmp_path: Path) -> None:
     storage = _make_storage(tmp_path)
     with storage.connect() as connection:

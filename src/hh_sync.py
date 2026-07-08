@@ -97,7 +97,7 @@ class HHSyncService:
             except Exception as exc:
                 failed_negotiations.append({"negotiation_id": current_id, "error": str(exc)})
 
-        if synced_negotiations or negotiation_id:
+        if synced_negotiations:
             self.oauth_manager.mark_sync_success()
         return {
             "entity": "messages",
