@@ -5,10 +5,11 @@ Before tagging a release, verify:
 ## Pre-release
 
 - [ ] `python -m ruff check src tests` — lint is green
-- [ ] `python -m pytest` — all tests pass
+- [ ] `python -m pytest -q` — all tests pass
 - [ ] `python -m src.main doctor` — no FAIL
 - [ ] `python -m src.main health` — no FAIL / WARN that blocks release
 - [ ] `python -m src.main version` — version correct
+- [ ] Official baseline branch audited against `main` and release scope is explicit
 - [ ] `python -m src.main auth-check` — API access OK (if token configured)
 - [ ] `python -m src.main search --dry-run --mode smoke` — estimate shown
 - [ ] `python -m src.main wizard daily --plan` — baseline daily workflow still documented
@@ -24,6 +25,7 @@ Before tagging a release, verify:
 - [ ] Baseline docs updated when roadmap/current-state changed:
   - `docs/CURRENT_STATE_2026-07-09.md`
   - `docs/PHASE3_ROADMAP_2026-07-09.md`
+  - `docs/EPIC_L_SYNC_MATURITY_DECISION_2026-07-09.md`
 
 ## Post-release
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .. import __version__
 from .routes import router
 
 _static_dir = Path(__file__).resolve().parent / "static"
@@ -16,7 +17,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="CareerSignal HH",
-        version="0.7.0",
+        version=__version__,
         docs_url=None,  # Disable OpenAPI docs for now
         redoc_url=None,
     )

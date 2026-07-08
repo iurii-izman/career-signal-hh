@@ -25,6 +25,8 @@ The core boundary remains unchanged:
 - `review apply` only records a manual action that already happened outside
   the tool.
 
+The official consolidated release baseline for this state is `v0.8.0`.
+
 ## Delivered Waves
 
 The currently implemented baseline covers Tail-0 and Epics A-L:
@@ -51,6 +53,7 @@ On 2026-07-09 the active branch baseline verifies as:
 - `python -m pytest -q` passes (`439 passed`);
 - `python -m src.main doctor` is green;
 - `python -m src.main health` is green;
+- `python -m src.main version` reports `0.8.0`;
 - DB schema version is `12`;
 - backup/export freshness is healthy.
 
@@ -77,26 +80,7 @@ This means the code is ahead of the live operator setup.
 
 ## Main Remaining Technical Debt
 
-### 1. Branch and release consolidation
-
-The implemented baseline is ahead of `main`.
-
-- `main` does not yet include Epics K and L;
-- the factual baseline lives on additive epic branches;
-- release/version/docs discipline should now consolidate around one official
-  post-L baseline.
-
-This is currently the most important non-code debt.
-
-### 2. Documentation drift
-
-Some top-level docs still describe K/L as future or partial work:
-
-- `README.md` lagged behind the actual branch baseline before this update;
-- `docs/CURRENT_STATE_2026-07-08.md` reflects post-K but pre-L state;
-- there was no dedicated Epic L decision note.
-
-### 3. Activation gap
+### 1. Activation gap
 
 The product ships OAuth/sync/outbox capabilities that are still not fully
 activated in the current local environment.
@@ -107,7 +91,17 @@ The next pragmatic step is not another abstract epic. It is live activation:
 - HH sync smoke on real credentials;
 - real webhook delivery verification.
 
-### 4. Storage concentration
+### 2. Baseline branch not yet merged into `main`
+
+Epic M resolves the release/documentation drift, but the official post-L
+baseline is still ahead of `main` by additive commits.
+
+- `main` does not yet include Epics K and L;
+- the audited post-L baseline currently lives on `codex/epic-l-sync-maturity`;
+- there is no reverse divergence from `main`, so merge risk is organizational
+  rather than architectural.
+
+### 3. Storage concentration
 
 `src/storage.py` remains the main concentration point for:
 
@@ -127,7 +121,7 @@ feature expansion.
 
 Recommended order:
 
-1. consolidate the official baseline after Epics K-L;
+1. merge the consolidated post-L baseline into `main`;
 2. activate live OAuth/sync/outbox operator paths;
 3. only then add new operator-productivity epics.
 

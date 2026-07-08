@@ -4,9 +4,9 @@
 
 Phase 3 should not start with another broad feature hunt.
 
-The correct next move is:
+The correct next move is now:
 
-1. consolidate the actual product baseline after Epics K-L;
+1. merge the consolidated post-L baseline into `main`;
 2. activate live operator flows that already exist in code;
 3. only then expand operator productivity and distribution maturity.
 
@@ -22,7 +22,6 @@ search -> score -> queue -> briefing -> apply-pack -> apply-assist
 
 The main gaps are no longer "missing core features". They are:
 
-- baseline consolidation into one official release state;
 - live activation of managed OAuth, HH sync, and outbox delivery;
 - better operator productivity around already-shipped flows;
 - selective architecture relief where growth pressure is now visible.
@@ -41,13 +40,16 @@ The following remain out of scope unless there is a later explicit decision:
 
 ## Recommended Epic Order
 
-1. Epic M — Baseline Consolidation & Release Freeze
-2. Epic N — Live Activation: OAuth, HH Sync, Outbox
-3. Epic O — Operator Productivity Layer
-4. Epic P — Architecture Relief for Storage/UI Aggregation
-5. Epic Q — Distribution & Packaging Maturity
+1. Epic N — Live Activation: OAuth, HH Sync, Outbox
+2. Epic O — Operator Productivity Layer
+3. Epic P — Architecture Relief for Storage/UI Aggregation
+4. Epic Q — Distribution & Packaging Maturity
 
 ## Epic M — Baseline Consolidation & Release Freeze
+
+### Status
+
+Completed on 2026-07-09 as release baseline `v0.8.0`.
 
 ### Goal
 
@@ -58,7 +60,7 @@ Turn the real post-L branch state into one explicit and documented baseline.
 - merge/align post-K and post-L work into the official baseline branch;
 - refresh `README.md`, `CHANGELOG.md`, release checklist, current-state docs;
 - add missing Epic L decision documentation;
-- decide whether the next tag stays `0.7.x` or becomes `0.8.0`;
+- cut the consolidated release as `0.8.0`;
 - run full verification and freeze the baseline.
 
 ### Exit criteria

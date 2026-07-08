@@ -151,7 +151,7 @@ def test_ui_status_file_written(monkeypatch, tmp_path: Path) -> None:
     data = json.loads(status_file.read_text(encoding="utf-8"))
     assert data["port"] == 8765
     assert data["host"] == "127.0.0.1"
-    assert data["version"] == "0.7.0"
+    assert data["version"] == "0.8.0"
     assert data["state"] == "unknown"
     assert data["url"] == "http://127.0.0.1:8765"
     assert "server_started_at" in data

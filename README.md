@@ -34,7 +34,8 @@ CareerSignal HH не отправляет отклики, не делает auto
 
 ## Текущее состояние
 
-На 9 июля 2026 проект находится в состоянии **Phase 2 complete / Phase 3 ready**:
+На 9 июля 2026 проект находится в состоянии **post-L baseline consolidated
+for release freeze (`v0.8.0`)**:
 
 - online-first baseline стабилизирован;
 - Tail-0 и Epics A-L реализованы;
@@ -44,7 +45,9 @@ CareerSignal HH не отправляет отклики, не делает auto
 - локальный web UI, cockpit и operator control plane являются рабочей
   операционной поверхностью;
 - desktop-ready Windows app runner уже существует поверх локального UI;
-- HH sync maturity доведён до pagination + messages + actionable reconcile.
+- HH sync maturity доведён до pagination + messages + actionable reconcile;
+- официальный release baseline после Epics K-L зафиксирован и согласован по
+  version/docs/checklist surfaces.
 
 Актуальный baseline зафиксирован в:
 
@@ -58,7 +61,6 @@ CareerSignal HH не отправляет отклики, не делает auto
 
 Следующая реализационная волна должна идти не в новые случайные хвосты, а в:
 
-- consolidation and release freeze;
 - live activation of OAuth / HH sync / outbox;
 - operator productivity improvements;
 - selective architecture relief and packaging maturity.
