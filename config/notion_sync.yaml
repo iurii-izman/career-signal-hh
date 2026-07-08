@@ -1,0 +1,9 @@
+notion_sync:
+  enabled: false
+  provider: n8n_webhook
+  target: external_sync
+  webhook_url_env: JOB_TRACKER_WEBHOOK_URL
+  webhook_secret_env: JOB_TRACKER_SECRET
+  timeout_seconds: 10
+  batch_size: 10
+  verify_tls: true

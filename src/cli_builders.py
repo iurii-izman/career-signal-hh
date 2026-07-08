@@ -23,6 +23,7 @@ from .commands import (
     import_vacancy,
     llm,
     maintenance,
+    notion_sync,
     presets,
     profiles,
     quality,
@@ -337,6 +338,7 @@ def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_wizard_parser(sub)
     build_search_lab_parser(sub)
     build_campaigns_parser(sub)
+    build_notion_sync_parser(sub)
     build_import_parser(sub)
     build_report_parser(sub)
     build_llm_parser(sub)
@@ -542,6 +544,45 @@ def build_import_parser(sub: argparse._SubParsersAction) -> None:
     t = ps.add_parser("text-file")
     t.add_argument("path")
     t.set_defaults(func=import_vacancy.command_import_text_file)
+
+
+def build_notion_sync_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("notion-sync")
+    ps = p.add_subparsers(dest="notion_sync_command", required=True)
+
+    status = ps.add_parser("status")
+    status.add_argument("--status", choices=["pending", "failed", "sent"])
+    status.add_argument("--vacancy-id")
+    status.add_argument("--outbox-id", type=int)
+    status.add_argument("--limit", type=int, default=20)
+    status.set_defaults(func=notion_sync.command_notion_sync_status)
+
+    dry = ps.add_parser("dry-run")
+    dry.add_argument("--status", choices=["pending", "failed", "sent"], default="pending")
+    dry.add_argument("--vacancy-id")
+    dry.add_argument("--outbox-id", type=int)
+    dry.add_argument("--limit", type=int, default=5)
+    dry.add_argument("--replay", action="store_true")
+    dry.set_defaults(func=notion_sync.command_notion_sync_dry_run)
+
+    push = ps.add_parser("push")
+    push.add_argument("--status", choices=["pending", "failed", "sent"], default="pending")
+    push.add_argument("--vacancy-id")
+    push.add_argument("--outbox-id", type=int)
+    push.add_argument("--limit", type=int, default=None)
+    push.add_argument("--replay", action="store_true")
+    push.set_defaults(func=notion_sync.command_notion_sync_push)
+
+    retry = ps.add_parser("retry-failed")
+    retry.add_argument("--vacancy-id")
+    retry.add_argument("--outbox-id", type=int)
+    retry.add_argument("--limit", type=int, default=None)
+    retry.set_defaults(func=notion_sync.command_notion_sync_retry_failed)
+
+    replay = ps.add_parser("replay")
+    replay.add_argument("--outbox-id", type=int, required=True)
+    replay.add_argument("--dry-run", action="store_true")
+    replay.set_defaults(func=notion_sync.command_notion_sync_replay)
 
 
 def build_report_parser(sub: argparse._SubParsersAction) -> None:

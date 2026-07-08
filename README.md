@@ -997,12 +997,14 @@ src/
     db.py              → db info, migrate, integrity, backup, vacuum, optimize, purge-samples, cleanup-orphans
     doctor.py          → doctor
     export.py          → export
+    notion_sync.py     → notion-sync status/push/dry-run/retry-failed/replay
     profiles.py        → profiles
     review.py          → review list/set/note/apply/next
     sample.py          → sample-export
     search.py          → search (с search-loop)
     stats.py           → top, stats
   services/
+    notion_sync_service.py → webhook delivery, dry-run, retry-safe outbox push
     search_runner.py   → print_run_estimate, print_run_summary
     search_modes.py    → реэкспорт SEARCH_MODES
 ```
@@ -1022,6 +1024,58 @@ src/
 
 Одна ошибка запроса или вакансии записывается в `search_runs` и не останавливает
 весь запуск.
+
+## Notion / n8n outbox
+
+Внешняя синхронизация идёт только через `integration_outbox`. Локальные review /
+briefing действия не делают прямых webhook side effects.
+
+Минимальный flow:
+
+- storage пишет snapshot payload в `integration_outbox`;
+- `python -m src.main notion-sync push` забирает pending rows oldest-first;
+- webhook получает envelope с `delivery_key = cshh:<target>:<outbox_id>`;
+- retry/replay используют тот же `delivery_key`, поэтому downstream может делать dedupe;
+- при сетевой или HTTP-ошибке запись остаётся в локальной БД со статусом `failed`,
+  счётчиком `attempts` и `last_error`.
+
+Конфиг:
+
+```yaml
+# config/notion_sync.yaml
+notion_sync:
+  enabled: false
+  provider: n8n_webhook
+  target: external_sync
+  webhook_url_env: JOB_TRACKER_WEBHOOK_URL
+  webhook_secret_env: JOB_TRACKER_SECRET
+  timeout_seconds: 10
+  batch_size: 10
+  verify_tls: true
+```
+
+```powershell
+$env:JOB_TRACKER_WEBHOOK_URL = "https://n8n.example/webhook/job-tracker"
+$env:JOB_TRACKER_SECRET = "replace-me"
+```
+
+Операторские команды:
+
+```powershell
+python -m src.main notion-sync status
+python -m src.main notion-sync dry-run --limit 3
+python -m src.main notion-sync push --limit 10
+python -m src.main notion-sync retry-failed
+python -m src.main notion-sync replay --outbox-id 42 --dry-run
+python -m src.main notion-sync replay --outbox-id 42   # only for pending/failed
+```
+
+Как понять, что событие ушло или застряло:
+
+- `status=sent` и `attempts >= 1` — webhook принял событие;
+- `status=failed` + `last_error` — событие застряло и ждёт `retry-failed` или `replay`;
+- `status=pending` — событие ещё не отправлялось;
+- `notion-sync status` показывает totals, oldest pending/failed timestamps и последние записи.
 
 ## Данные: sample vs production
 

@@ -227,6 +227,29 @@ def test_maintenance_cleanup_yes_parses() -> None:
     assert args.yes is True
 
 
+# ── notion-sync ──────────────────────────────────────────────────────────────
+
+
+def test_notion_sync_status_parses() -> None:
+    args = parse_args(["notion-sync", "status", "--status", "failed", "--limit", "10"])
+    assert args.notion_sync_command == "status"
+    assert args.status == "failed"
+    assert args.limit == 10
+
+
+def test_notion_sync_push_parses() -> None:
+    args = parse_args(["notion-sync", "push", "--vacancy-id", "12345"])
+    assert args.notion_sync_command == "push"
+    assert args.vacancy_id == "12345"
+
+
+def test_notion_sync_replay_parses() -> None:
+    args = parse_args(["notion-sync", "replay", "--outbox-id", "7", "--dry-run"])
+    assert args.notion_sync_command == "replay"
+    assert args.outbox_id == 7
+    assert args.dry_run is True
+
+
 # ── scheduler ────────────────────────────────────────────────────────────────
 
 

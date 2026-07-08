@@ -802,19 +802,31 @@ class Storage:
     def list_outbox_entries(
         self,
         *,
+        outbox_id: int | None = None,
         status: str | None = None,
         target: str | None = None,
+        vacancy_id: str | None = None,
+        event_type: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Return integration outbox entries ordered oldest-first within status."""
         where: list[str] = []
         params: list[Any] = []
+        if outbox_id is not None:
+            where.append("id = ?")
+            params.append(outbox_id)
         if status:
             where.append("status = ?")
             params.append(status)
         if target:
             where.append("target = ?")
             params.append(target)
+        if vacancy_id:
+            where.append("vacancy_id = ?")
+            params.append(vacancy_id)
+        if event_type:
+            where.append("event_type = ?")
+            params.append(event_type)
 
         sql = "SELECT * FROM integration_outbox"
         if where:
@@ -823,6 +835,118 @@ class Storage:
         params.append(limit)
         with self.connect() as connection:
             return [dict(row) for row in connection.execute(sql, params).fetchall()]
+
+    def get_outbox_entry(self, outbox_id: int) -> dict[str, Any] | None:
+        """Return a single integration outbox row by id."""
+        rows = self.list_outbox_entries(outbox_id=outbox_id, limit=1)
+        return rows[0] if rows else None
+
+    def update_outbox_delivery_attempt(
+        self,
+        outbox_id: int,
+        *,
+        status: str,
+        last_error: str | None = None,
+    ) -> dict[str, Any]:
+        """Increment attempts and persist the latest delivery result."""
+        allowed_statuses = {"pending", "sent", "failed"}
+        normalized_status = status.strip().lower()
+        if normalized_status not in allowed_statuses:
+            allowed = ", ".join(sorted(allowed_statuses))
+            raise ValueError(f"Недопустимый outbox status={status!r}. Допустимы: {allowed}.")
+
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE integration_outbox
+                SET status = ?,
+                    attempts = attempts + 1,
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (normalized_status, last_error, now, outbox_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"Outbox entry id={outbox_id} не найдена.")
+            row = connection.execute(
+                "SELECT * FROM integration_outbox WHERE id = ?",
+                (outbox_id,),
+            ).fetchone()
+        return dict(row) if row else {}
+
+    def mark_outbox_pending(self, outbox_id: int) -> dict[str, Any]:
+        """Reset an outbox row to pending without incrementing attempts."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE integration_outbox
+                SET status = 'pending',
+                    last_error = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, outbox_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError(f"Outbox entry id={outbox_id} не найдена.")
+            row = connection.execute(
+                "SELECT * FROM integration_outbox WHERE id = ?",
+                (outbox_id,),
+            ).fetchone()
+        return dict(row) if row else {}
+
+    def summarize_outbox(self, *, target: str | None = None) -> dict[str, Any]:
+        """Return status counters and oldest pending/failed timestamps."""
+        where = ""
+        params: list[Any] = []
+        if target:
+            where = " WHERE target = ?"
+            params.append(target)
+        with self.connect() as connection:
+            counts_rows = connection.execute(
+                f"""
+                SELECT status, COUNT(*) AS total
+                FROM integration_outbox
+                {where}
+                GROUP BY status
+                """,
+                params,
+            ).fetchall()
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM integration_outbox{where}",
+                params,
+            ).fetchone()[0]
+            oldest_pending = connection.execute(
+                f"""
+                SELECT created_at
+                FROM integration_outbox
+                {where + (' AND' if where else ' WHERE')} status = 'pending'
+                ORDER BY created_at ASC, id ASC
+                LIMIT 1
+                """,
+                params,
+            ).fetchone()
+            oldest_failed = connection.execute(
+                f"""
+                SELECT updated_at
+                FROM integration_outbox
+                {where + (' AND' if where else ' WHERE')} status = 'failed'
+                ORDER BY updated_at ASC, id ASC
+                LIMIT 1
+                """,
+                params,
+            ).fetchone()
+
+        counts = {row["status"]: int(row["total"]) for row in counts_rows}
+        return {
+            "total": int(total or 0),
+            "counts": counts,
+            "oldest_pending_at": oldest_pending["created_at"] if oldest_pending else None,
+            "oldest_failed_at": oldest_failed["updated_at"] if oldest_failed else None,
+        }
 
     def list_vacancies_for_rescore(
         self, limit: int | None = None, preset: str | None = None
