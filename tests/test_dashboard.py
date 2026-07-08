@@ -67,6 +67,7 @@ def test_dashboard_state_has_new_fields(empty_db: str) -> None:
     assert "recent_activity" in state
     assert "attention_items" in state
     assert "action_plan" in state
+    assert "operator" in state
 
 
 def test_dashboard_uses_briefing_events_and_outbox(empty_db: str) -> None:
@@ -177,6 +178,10 @@ def test_index_template_has_sections() -> None:
     assert "risk-buckets-panel" in html
     assert "preset-performance-panel" in html
     assert "activity-panel" in html
+    assert "operator-cards" in html
+    assert "apply-assist-panel" in html
+    assert "operator-assist-activity" in html
+    assert "operator-outbox-activity" in html
 
 
 def test_follow_ups_endpoint() -> None:
@@ -215,3 +220,72 @@ def test_attention_panel_has_shortcut_actions() -> None:
     assert "Generate Briefing" in js
     assert '"/briefing"' in js
     assert "Follow-up tmrw" in js
+    assert "operator-preview-assist" in js
+    assert "operator-approve-assist" in js
+
+
+def test_dashboard_operator_state_surfaces_control_plane(empty_db: str) -> None:
+    _init_db(empty_db)
+    storage = Storage(empty_db)
+    now = datetime.now(timezone.utc).isoformat()
+    storage.upsert_vacancy(
+        Vacancy(
+            id="assist-1",
+            name="Platform Python Engineer",
+            employer_name="Signal",
+            alternate_url="https://hh.ru/vacancy/assist-1",
+            raw_json="{}",
+            description_text="Remote platform role",
+            first_seen_at=now,
+            last_seen_at=now,
+            source_profile="python",
+            source_query="python engineer",
+        )
+    )
+    with storage.connect() as conn:
+        conn.execute(
+            "INSERT INTO scores (vacancy_id, total_score, best_profile, scored_at, work_format_flags_json, risk_flags_json, match_reasons_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("assist-1", 92, "python", now, '["remote"]', "[]", "[]"),
+        )
+        conn.execute(
+            "INSERT INTO score_details (vacancy_id, preset_name, total_score, confidence_score, noise_score, decision, "
+            "category_scores_json, matched_keywords_json, excluded_keywords_json, risk_flags_json, quality_flags_json, work_format_flags_json, explanation_json, scored_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "assist-1",
+                "python",
+                92,
+                70,
+                10,
+                "strong_match",
+                "{}",
+                "[]",
+                "[]",
+                "[]",
+                "[]",
+                '["remote"]',
+                "{}",
+                now,
+            ),
+        )
+    storage.upsert_review("assist-1", status="interesting", cover_letter_draft="draft")
+    storage.upsert_briefing_report(
+        "assist-1",
+        lang="ru",
+        score_total=92,
+        decision="strong_match",
+        report_md="# Briefing",
+        payload={"vacancy_id": "assist-1"},
+    )
+
+    from src.services.app_service import get_operator_state
+
+    state = get_operator_state(storage=storage)
+
+    assert "oauth" in state
+    assert "hh_sync" in state
+    assert "outbox" in state
+    assert "apply_assist" in state
+    assert "recent_activity" in state
+    assert state["apply_assist"]["evaluated"] >= 1

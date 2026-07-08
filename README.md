@@ -41,7 +41,8 @@ CareerSignal HH не отправляет отклики, не делает auto
 - полный daily loop `search -> queue -> briefing -> apply-pack -> apply-assist -> manual apply`
   уже существует;
 - `managed OAuth V2` реализован как additive read-only sync слой;
-- локальный web UI и cockpit являются рабочей операционной поверхностью.
+- локальный web UI и cockpit являются рабочей операционной поверхностью;
+- Epic K перенёс operator control plane функции в UI поверх CLI baseline.
 
 Короткий статус зафиксирован в:
 
@@ -55,6 +56,10 @@ productization и operator maturity:
 - Epic J — desktop packaging;
 - Epic K — operator control plane in UI;
 - Epic L — sync maturity.
+
+Решение по Epic K зафиксировано в:
+
+- [docs/EPIC_K_OPERATOR_CONTROL_PLANE_DECISION_2026-07-09.md](C:/Dev/career-signal-hh/docs/EPIC_K_OPERATOR_CONTROL_PLANE_DECISION_2026-07-09.md)
 
 ## Установка
 

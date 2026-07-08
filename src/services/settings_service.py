@@ -52,6 +52,7 @@ def get_settings() -> dict[str, Any]:
     """Return all settings, never exposing full token."""
     load_dotenv()
     masked_tokens = {key: mask_secret(os.getenv(key, "")) for key in TOKEN_KEYS}
+    from .app_service import get_operator_state
 
     return {
         "env": {
@@ -68,6 +69,7 @@ def get_settings() -> dict[str, Any]:
         "candidate": _load_candidate(),
         "search_modes": _load_search_modes(),
         "health": _get_health_snapshot(),
+        "operator": get_operator_state(),
     }
 
 

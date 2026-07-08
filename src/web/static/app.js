@@ -149,6 +149,7 @@
     renderAttention(data.attention_items || []);
     renderRiskBuckets(data.risk_buckets || []);
     renderPresetPerformance(data.preset_performance || []);
+    renderOperator(data.operator || {});
     // Follow-ups
     var fu = document.getElementById("follow-ups-panel");
     if (fu && data.follow_ups && data.follow_ups.length) {
@@ -392,6 +393,144 @@
       })
       .join("");
   }
+  function renderOperator(operator) {
+    var cards = document.getElementById("operator-cards");
+    if (cards) {
+      var oauth = operator.oauth || {};
+      var hh = operator.hh_sync || {};
+      var outbox = operator.outbox || {};
+      var applyAssist = operator.apply_assist || {};
+      var outboxCounts = ((outbox.summary || {}).counts || {});
+      cards.innerHTML = [
+        [
+          "OAuth",
+          oauth.configured
+            ? oauth.expired
+              ? "configured / expired"
+              : "configured"
+            : "not configured",
+        ],
+        [
+          "HH sync",
+          (hh.negotiations || 0) +
+            " neg / " +
+            (hh.negotiations_matched_local_vacancies || 0) +
+            " matched",
+        ],
+        [
+          "Outbox",
+          (outboxCounts.pending || 0) +
+            " pending / " +
+            (outboxCounts.failed || 0) +
+            " failed",
+        ],
+        [
+          "Apply assist",
+          (applyAssist.ready_count || 0) +
+            " ready / " +
+            (applyAssist.blocked_count || 0) +
+            " blocked",
+        ],
+      ]
+        .map(function (row) {
+          return (
+            '<div class="card mini-card"><div class="card-value muted">' +
+            escapeHtml(row[1]) +
+            '</div><div class="card-label">' +
+            row[0] +
+            "</div></div>"
+          );
+        })
+        .join("");
+    }
+
+    var readiness = document.getElementById("apply-assist-panel");
+    if (readiness) {
+      var items = (operator.apply_assist || {}).items || [];
+      readiness.innerHTML = items.length
+        ? items
+            .map(function (item) {
+              var vacancy = item.vacancy || {};
+              var status = item.ok
+                ? "Ready for explicit handoff"
+                : "Blocked: " + (item.failed_gates || []).join(", ");
+              return (
+                '<div class="attention-item"><div class="attention-main"><a class="attention-link" href="/vacancy/' +
+                escapeHtml(vacancy.id || item.vacancy_id) +
+                '">' +
+                escapeHtml(vacancy.name || item.vacancy_id || "") +
+                '</a><span class="attention-meta">' +
+                escapeHtml(vacancy.employer_name || "") +
+                " · score " +
+                escapeHtml(String(((item.score || {}).total_score) || 0)) +
+                "</span></div><div class=\"attention-actions\"><button class=\"btn btn-sm operator-preview-assist\" data-vacancy-id=\"" +
+                escapeHtml(item.vacancy_id) +
+                '">Preview</button>' +
+                (item.ok
+                  ? '<button class="btn btn-sm operator-approve-assist" data-vacancy-id="' +
+                    escapeHtml(item.vacancy_id) +
+                    '">Approve Handoff</button>'
+                  : "") +
+                '</div><div class="attention-side">' +
+                escapeHtml(status) +
+                "</div></div>"
+              );
+            })
+            .join("")
+        : '<div class="log-entry muted">No apply-assist candidates yet</div>';
+    }
+
+    function renderSimpleActivity(targetId, items, formatter) {
+      var el = document.getElementById(targetId);
+      if (!el) return;
+      if (!items || !items.length) {
+        el.innerHTML = '<div class="log-entry muted">No activity</div>';
+        return;
+      }
+      el.innerHTML = items
+        .map(formatter)
+        .join("");
+    }
+
+    renderSimpleActivity(
+      "operator-assist-activity",
+      ((operator.recent_activity || {}).assist || []).slice(0, 8),
+      function (item) {
+        return (
+          '<div class="activity-item"><span class="activity-time">' +
+          fmtDate(item.created_at) +
+          '</span><span class="activity-type">' +
+          escapeHtml(item.event_type || "") +
+          '</span><a class="activity-link" href="/vacancy/' +
+          item.vacancy_id +
+          '">' +
+          escapeHtml(item.name || item.vacancy_id || "") +
+          '</a><span class="activity-meta">' +
+          escapeHtml(item.employer_name || "") +
+          "</span></div>"
+        );
+      },
+    );
+    renderSimpleActivity(
+      "operator-outbox-activity",
+      ((operator.recent_activity || {}).outbox || []).slice(0, 8),
+      function (item) {
+        return (
+          '<div class="activity-item"><span class="activity-time">' +
+          fmtDate(item.updated_at || item.created_at) +
+          '</span><span class="activity-type">' +
+          escapeHtml(item.status || "") +
+          '</span><a class="activity-link" href="/vacancy/' +
+          escapeHtml(item.vacancy_id || "") +
+          '">' +
+          escapeHtml(item.name || item.vacancy_id || ("#" + item.id)) +
+          '</a><span class="activity-meta">' +
+          escapeHtml(item.event_type || "") +
+          "</span></div>"
+        );
+      },
+    );
+  }
   function setStat(id, value, cls) {
     var el = $("#" + id);
     if (el) {
@@ -411,6 +550,7 @@
           return c.status === "WARN";
         }).length;
         var h = $("#health-status");
+        if (!h) return;
         if (failed > 0) {
           h.textContent = "Health: " + failed + " FAIL";
           h.className = "status-indicator fail";
@@ -423,8 +563,11 @@
         }
       }
     } catch (e) {
-      $("#health-status").textContent = "Health: error";
-      $("#health-status").className = "status-indicator fail";
+      var h = $("#health-status");
+      if (h) {
+        h.textContent = "Health: error";
+        h.className = "status-indicator fail";
+      }
     }
   }
   // ── Jobs ─────────────────────────────────────────────────────────────
@@ -605,6 +748,30 @@
         var attention = document.getElementById("attention-panel");
         if (attention) attention.scrollIntoView({ behavior: "smooth" });
         break;
+      case "operator-oauth-refresh":
+        apiPost("/api/operator/oauth/refresh", {}).then(function (r) {
+          showToast(r.message || "OAuth refresh complete", r && r.ok);
+          loadDashboard();
+        });
+        break;
+      case "operator-outbox-push":
+        apiPost("/api/operator/outbox", {
+          action: "push_pending",
+          limit: 10,
+        }).then(function (r) {
+          showToast(r.message || "Outbox push complete", r && r.ok);
+          loadDashboard();
+        });
+        break;
+      case "operator-outbox-retry":
+        apiPost("/api/operator/outbox", {
+          action: "retry_failed",
+          limit: 10,
+        }).then(function (r) {
+          showToast(r.message || "Outbox retry complete", r && r.ok);
+          loadDashboard();
+        });
+        break;
     }
     // Queue card actions from queue page
     var qbtn = e.target.closest("[data-va]");
@@ -656,6 +823,33 @@
       if (fuid) {
         apiPost("/api/follow-ups/" + fuid + "/next-action").then(function (r) {
           showToast(r.message, r.ok);
+          loadDashboard();
+        });
+      }
+    }
+    var operatorPreview = e.target.closest(".operator-preview-assist");
+    if (operatorPreview) {
+      var previewId = operatorPreview.getAttribute("data-vacancy-id");
+      if (previewId) {
+        apiGet("/api/operator/apply-assist/" + previewId).then(function (r) {
+          showToast(r.message || "Apply-assist preview loaded", r && r.ok);
+          if (r && r.data && r.data.vacancy && r.data.vacancy.alternate_url) {
+            addLog(
+              "Apply-assist preview: " + r.data.vacancy.alternate_url,
+              r.ok ? "info" : "error",
+            );
+          }
+        });
+      }
+    }
+    var operatorApprove = e.target.closest(".operator-approve-assist");
+    if (operatorApprove) {
+      var approveId = operatorApprove.getAttribute("data-vacancy-id");
+      if (approveId) {
+        apiPost("/api/operator/apply-assist/" + approveId + "/approve", {
+          open_browser: false,
+        }).then(function (r) {
+          showToast(r.message || "Apply-assist approval complete", r && r.ok);
           loadDashboard();
         });
       }

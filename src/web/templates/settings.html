@@ -43,6 +43,48 @@
         <button class="btn btn-secondary" id="btn-test-auth">Test Auth</button>
       </div>
     </div>
+
+    <!-- Section: Operator Control Plane -->
+    <div class="settings-section">
+      <h3>Operator Control Plane</h3>
+      <div id="operator-summary" class="settings-grid"></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>HH OAuth / Read-Only Sync</h3>
+      <div id="operator-oauth"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary" id="btn-oauth-refresh">Refresh OAuth</button>
+        <button class="btn btn-secondary" id="btn-hh-sync-me">Sync Me</button>
+        <button class="btn btn-secondary" id="btn-hh-sync-resumes">Sync Resumes</button>
+        <button class="btn btn-secondary" id="btn-hh-sync-negotiations">Sync Negotiations</button>
+        <button class="btn btn-secondary" id="btn-hh-sync-reconcile">Reconcile</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Outbox</h3>
+      <div id="operator-outbox"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary" id="btn-outbox-dry-run">Dry Run Pending</button>
+        <button class="btn btn-secondary" id="btn-outbox-push">Push Pending</button>
+        <button class="btn btn-secondary" id="btn-outbox-retry">Retry Failed</button>
+      </div>
+      <div id="operator-outbox-recent" style="margin-top:12px"></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Apply Assist Readiness</h3>
+      <div id="operator-apply-assist"></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Recent Assist / Outbox Activity</h3>
+      <div class="settings-grid">
+        <div class="settings-card"><div id="operator-recent-assist"></div></div>
+        <div class="settings-card"><div id="operator-recent-outbox"></div></div>
+      </div>
+    </div>
   </div>
 </div>
 <div class="toast-container" id="toast-container"></div>
@@ -51,6 +93,7 @@
 <script>
 (function() {
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function fmtDate(iso) { return iso ? String(iso).replace('T', ' ').substring(0, 19) : '-'; }
   function toast(msg, ok) {
     var c = document.getElementById('toast-container');
     var t = document.createElement('div');
@@ -66,6 +109,63 @@
 
   var envData = {};
   var candidateData = {};
+  var operatorData = {};
+
+  function renderOperator(op) {
+    operatorData = op || {};
+    var oauth = operatorData.oauth || {};
+    var hh = operatorData.hh_sync || {};
+    var outbox = operatorData.outbox || {};
+    var outboxSummary = outbox.summary || {};
+    var outboxCounts = outboxSummary.counts || {};
+    var applyAssist = operatorData.apply_assist || {};
+    var recent = operatorData.recent_activity || {};
+
+    document.getElementById('operator-summary').innerHTML =
+      '<div class="settings-card"><label>OAuth</label><strong>' + (oauth.configured ? (oauth.expired ? 'Configured, expired' : 'Configured') : 'Not configured') + '</strong><div style="font-size:12px;color:var(--muted);margin-top:4px">Last sync: ' + esc(fmtDate(oauth.last_sync_at)) + '</div></div>' +
+      '<div class="settings-card"><label>HH Sync</label><strong>' + (hh.negotiations || 0) + ' negotiations</strong><div style="font-size:12px;color:var(--muted);margin-top:4px">Matched: ' + (hh.negotiations_matched_local_vacancies || 0) + ' | Read-only: ' + (hh.read_only ? 'yes' : 'no') + '</div></div>' +
+      '<div class="settings-card"><label>Outbox</label><strong>' + (outboxCounts.pending || 0) + ' pending</strong><div style="font-size:12px;color:var(--muted);margin-top:4px">Failed: ' + (outboxCounts.failed || 0) + ' | Sent: ' + (outboxCounts.sent || 0) + '</div></div>' +
+      '<div class="settings-card"><label>Apply Assist</label><strong>' + (applyAssist.ready_count || 0) + ' ready</strong><div style="font-size:12px;color:var(--muted);margin-top:4px">Blocked: ' + (applyAssist.blocked_count || 0) + ' | Auto-apply: no</div></div>';
+
+    document.getElementById('operator-oauth').innerHTML =
+      '<div class="settings-grid">' +
+      '<div class="settings-card"><label>Managed access token</label><strong>' + (oauth.managed_access_token_present ? 'Present' : 'Missing') + '</strong></div>' +
+      '<div class="settings-card"><label>Managed refresh token</label><strong>' + (oauth.managed_refresh_token_present ? 'Present' : 'Missing') + '</strong></div>' +
+      '<div class="settings-card"><label>Manual env token</label><strong>' + (oauth.manual_env_token_present ? 'Present' : 'Missing') + '</strong></div>' +
+      '<div class="settings-card"><label>Account</label><strong>' + esc(oauth.account_email || '-') + '</strong></div>' +
+      '</div>' +
+      '<div class="settings-card" style="margin-top:12px"><label>Status</label><div>Scope: ' + esc(oauth.scope || '-') + '</div><div>Expired: ' + (oauth.expired ? 'yes' : 'no') + '</div><div>Last refresh: ' + esc(fmtDate(oauth.last_refresh_at)) + '</div><div>Last sync: ' + esc(fmtDate(oauth.last_sync_at)) + '</div><div>Last error: ' + esc(oauth.last_error || oauth.storage_error || '-') + '</div></div>';
+
+    document.getElementById('operator-outbox').innerHTML =
+      '<div class="settings-card"><label>Webhook</label><strong>' + esc(((outbox.config || {}).webhook) || '-') + '</strong><div style="font-size:12px;color:var(--muted);margin-top:4px">Provider: ' + esc(((outbox.config || {}).provider) || '-') + ' | Ready: ' + (((outbox.config || {}).push_ready) ? 'yes' : 'no') + '</div><div style="font-size:12px;color:var(--muted);margin-top:4px">Reason: ' + esc(((outbox.config || {}).push_reason) || '-') + '</div></div>';
+
+    var recentOutbox = (outbox.recent || []).slice(0, 6);
+    document.getElementById('operator-outbox-recent').innerHTML = recentOutbox.length
+      ? '<table class="ops-table"><tr><th>ID</th><th>Status</th><th>Event</th><th>Vacancy</th><th>Updated</th></tr>' + recentOutbox.map(function(item) {
+          return '<tr><td>' + item.id + '</td><td>' + esc(item.status || '') + '</td><td>' + esc(item.event_type || '') + '</td><td>' + esc(item.name || item.vacancy_id || '-') + '</td><td>' + esc(fmtDate(item.updated_at || item.created_at)) + '</td></tr>';
+        }).join('') + '</table>'
+      : '<div class="settings-card">No outbox activity</div>';
+
+    var applyItems = applyAssist.items || [];
+    document.getElementById('operator-apply-assist').innerHTML = applyItems.length
+      ? '<table class="ops-table"><tr><th>Vacancy</th><th>Score</th><th>Review</th><th>Readiness</th><th>Actions</th></tr>' + applyItems.map(function(item) {
+          var vac = item.vacancy || {};
+          var readiness = item.ok ? 'Ready' : ('Blocked: ' + esc((item.failed_gates || []).join(', ') || '-'));
+          return '<tr><td><a href="/vacancy/' + esc(vac.id || item.vacancy_id) + '">' + esc(vac.name || item.vacancy_id) + '</a><div style="font-size:12px;color:var(--muted)">' + esc(vac.employer_name || '') + '</div></td><td>' + esc(String((item.score || {}).total_score || 0)) + '</td><td>' + esc((item.review || {}).status || '-') + '</td><td>' + readiness + '</td><td><button class="btn btn-sm operator-preview-assist" data-vacancy-id="' + esc(item.vacancy_id) + '">Preview</button> ' + (item.ok ? '<button class="btn btn-sm operator-approve-assist" data-vacancy-id="' + esc(item.vacancy_id) + '">Approve Handoff</button>' : '') + '</td></tr>';
+        }).join('') + '</table>'
+      : '<div class="settings-card">No apply-assist candidates yet</div>';
+
+    function renderRecent(list, targetId, emptyText) {
+      document.getElementById(targetId).innerHTML = list && list.length
+        ? list.slice(0, 8).map(function(item) {
+            return '<div class="log-entry muted"><strong>' + esc(item.event_type || item.status || '-') + '</strong> ' + esc(item.name || item.vacancy_id || ('#' + item.id)) + ' <span style="color:var(--muted)">' + esc(fmtDate(item.created_at || item.updated_at)) + '</span></div>';
+          }).join('')
+        : '<div class="log-entry muted">' + emptyText + '</div>';
+    }
+
+    renderRecent(recent.assist || [], 'operator-recent-assist', 'No assist activity');
+    renderRecent(recent.outbox || [], 'operator-recent-outbox', 'No outbox activity');
+  }
 
   async function load() {
     var r = await apiGet('/api/settings');
@@ -75,6 +175,7 @@
 
     envData = r.data.env || {};
     candidateData = r.data.candidate || {};
+    operatorData = r.data.operator || {};
 
     // Env fields
     var envKeys = ['HH_AUTH_MODE','HH_APP_ACCESS_TOKEN','HH_USER_ACCESS_TOKEN','HH_USER_AGENT','DB_PATH','HH_DELAY_MIN_SECONDS','HH_DELAY_MAX_SECONDS','HH_COOLDOWN_ON_429_SECONDS','HH_STOP_ON_429','HH_DETAIL_REFRESH_DAYS'];
@@ -119,6 +220,7 @@
     // Health
     var h = r.data.health || {};
     document.getElementById('health-snapshot').innerHTML = '<div style="font-size:12px;color:var(--muted)">DB: ' + (h.db_exists ? 'exists (' + (h.db_size_bytes/1024).toFixed(0) + ' KB)' : 'missing') + ' | Presets: ' + (h.presets_exists ? 'exists' : 'missing') + ' | Backup: ' + (h.latest_backup_hours != null ? h.latest_backup_hours + 'h ago' : 'none') + '</div>';
+    renderOperator(operatorData);
   }
 
   // Save env
@@ -178,6 +280,82 @@
     apiPost('/api/settings/health').then(function(r) {
       toast(r.message || 'Health check done', r.ok);
     });
+  });
+
+  document.getElementById('btn-oauth-refresh').addEventListener('click', function() {
+    apiPost('/api/operator/oauth/refresh').then(function(r) {
+      toast(r.message || 'OAuth refresh done', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-hh-sync-me').addEventListener('click', function() {
+    apiPost('/api/operator/hh-sync', { entity: 'me' }).then(function(r) {
+      toast(r.message || 'HH sync complete', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-hh-sync-resumes').addEventListener('click', function() {
+    apiPost('/api/operator/hh-sync', { entity: 'resumes' }).then(function(r) {
+      toast(r.message || 'HH sync complete', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-hh-sync-negotiations').addEventListener('click', function() {
+    apiPost('/api/operator/hh-sync', { entity: 'negotiations' }).then(function(r) {
+      toast(r.message || 'HH sync complete', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-hh-sync-reconcile').addEventListener('click', function() {
+    apiPost('/api/operator/hh-sync', { entity: 'reconcile' }).then(function(r) {
+      toast(r.message || 'HH reconcile complete', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-outbox-dry-run').addEventListener('click', function() {
+    apiPost('/api/operator/outbox', { action: 'dry_run', limit: 5 }).then(function(r) {
+      toast(r.message || 'Outbox dry-run complete', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-outbox-push').addEventListener('click', function() {
+    apiPost('/api/operator/outbox', { action: 'push_pending', limit: 10 }).then(function(r) {
+      toast(r.message || 'Outbox push complete', r.ok);
+      load();
+    });
+  });
+
+  document.getElementById('btn-outbox-retry').addEventListener('click', function() {
+    apiPost('/api/operator/outbox', { action: 'retry_failed', limit: 10 }).then(function(r) {
+      toast(r.message || 'Outbox retry complete', r.ok);
+      load();
+    });
+  });
+
+  document.addEventListener('click', function(e) {
+    var preview = e.target.closest('.operator-preview-assist');
+    if (preview) {
+      var vacancyId = preview.getAttribute('data-vacancy-id');
+      apiGet('/api/operator/apply-assist/' + vacancyId).then(function(r) {
+        toast(r.message || 'Apply-assist preview loaded', r.ok);
+      });
+      return;
+    }
+
+    var approve = e.target.closest('.operator-approve-assist');
+    if (approve) {
+      var approveId = approve.getAttribute('data-vacancy-id');
+      apiPost('/api/operator/apply-assist/' + approveId + '/approve', { open_browser: false }).then(function(r) {
+        toast(r.message || 'Apply-assist approval complete', r.ok);
+        load();
+      });
+    }
   });
 
   load();

@@ -13,7 +13,8 @@ job search with:
 - evented review/audit trail and integration outbox;
 - local cockpit/dashboard UI;
 - managed OAuth V2 read-only sync for HH user data;
-- controlled apply-assist with explicit operator approval.
+- controlled apply-assist with explicit operator approval;
+- operator control plane now surfaced in dashboard/settings UI.
 
 Core product boundary remains unchanged:
 
@@ -25,7 +26,8 @@ Core product boundary remains unchanged:
 
 ## Delivered Phases
 
-The stabilization wave and Epics A-H are complete:
+The stabilization wave and Epics A-J are complete, and Epic K adds UI control
+plane coverage for operator workflows:
 
 1. Tail-0 — stabilization and online-first baseline
 2. Epic A — candidate profile and search positioning
@@ -36,6 +38,9 @@ The stabilization wave and Epics A-H are complete:
 7. Epic F — cockpit 2.0 operational dashboard
 8. Epic G — managed OAuth V2 read-only sync
 9. Epic H — controlled apply-assist boundary
+10. Epic I — release hardening
+11. Epic J — desktop packaging
+12. Epic K — operator control plane in UI
 
 ## Operational Baseline
 
@@ -94,7 +99,7 @@ These are deliberate current boundaries, not accidental bugs:
 - no hidden token refresh during HH sync;
 - no message sync yet;
 - negotiations sync still needs pagination maturity;
-- local web UI exists, but packaging/installer is still future work.
+- no background auto-remediation for failed sync or assist gates.
 
 ## Main Remaining Technical Debt
 
@@ -134,5 +139,6 @@ avoid piling more responsibilities into the same file.
 
 ## Recommended Next Phase
 
-Use `docs/PHASE2_ROADMAP_2026-07-08.md` as the implementation roadmap after
-Epics A-H.
+Use `docs/PHASE2_ROADMAP_2026-07-08.md` and
+`docs/EPIC_K_OPERATOR_CONTROL_PLANE_DECISION_2026-07-09.md` as the baseline
+for the next implementation wave after Epics A-J.

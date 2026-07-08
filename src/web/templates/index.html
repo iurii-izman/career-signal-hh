@@ -132,6 +132,28 @@
                 <a href="/queue" class="btn btn-secondary">Review Queue</a>
             </div>
 
+            <div class="section-header"><h2>Operator Control Plane</h2></div>
+            <div class="card-row" id="operator-cards">
+                <div class="card mini-card"><div class="card-label">Loading operator state...</div></div>
+            </div>
+            <div class="action-row">
+                <button class="btn btn-secondary" data-action="operator-oauth-refresh">
+                    Refresh OAuth
+                </button>
+                <button class="btn btn-secondary" data-action="operator-outbox-push">
+                    Push Pending Outbox
+                </button>
+                <button class="btn btn-secondary" data-action="operator-outbox-retry">
+                    Retry Failed Outbox
+                </button>
+                <a href="/settings" class="btn btn-secondary">Open Settings</a>
+            </div>
+
+            <div class="section-header"><h2>Apply Assist Readiness</h2></div>
+            <div id="apply-assist-panel">
+                <div class="log-entry muted">No apply-assist data yet</div>
+            </div>
+
             <div class="section-header"><h2>Pipeline</h2></div>
             <div class="card-row" id="pipeline-cards"></div>
 
@@ -168,6 +190,22 @@
             <div class="section-header"><h2>Recent Activity</h2></div>
             <div id="activity-panel">
                 <div class="log-entry muted">No recent activity</div>
+            </div>
+
+            <div class="section-header"><h2>Assist / Outbox Activity</h2></div>
+            <div class="split-panels">
+                <div class="panel-box">
+                    <h3>Recent Assist</h3>
+                    <div id="operator-assist-activity">
+                        <div class="log-entry muted">No assist activity</div>
+                    </div>
+                </div>
+                <div class="panel-box">
+                    <h3>Recent Outbox</h3>
+                    <div id="operator-outbox-activity">
+                        <div class="log-entry muted">No outbox activity</div>
+                    </div>
+                </div>
             </div>
 
             <!-- Recent jobs -->

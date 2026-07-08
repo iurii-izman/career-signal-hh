@@ -56,3 +56,26 @@ class BulkActionRequest(BaseModel):
     decision: str | None = None
     force: bool = False
     confirm: bool = True
+
+
+class OperatorHHSyncRequest(BaseModel):
+    """Explicit HH read-only sync request."""
+
+    entity: str = "reconcile"
+    status: str | None = None
+    per_page: int = 50
+
+
+class OperatorOutboxRequest(BaseModel):
+    """Explicit outbox operator action."""
+
+    action: str = "push_pending"
+    outbox_id: int | None = None
+    limit: int = 10
+    dry_run: bool = False
+
+
+class OperatorApplyAssistApprovalRequest(BaseModel):
+    """Explicit apply-assist approval request."""
+
+    open_browser: bool = False

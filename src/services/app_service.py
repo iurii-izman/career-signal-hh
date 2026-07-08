@@ -1,4 +1,4 @@
-"""App service — dashboard, health, and action-plan operations."""
+"""App service — dashboard, health, action-plan, and operator control plane."""
 
 from __future__ import annotations
 
@@ -10,7 +10,9 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from ..storage import Storage
+from ..hh_oauth import HHOAuthManager
+from ..hh_sync import HHSyncService
+from ..storage import OUTBOX_TARGET_EXTERNAL_SYNC, Storage
 
 
 def _get_storage() -> Storage:
@@ -140,9 +142,125 @@ def get_dashboard_state() -> dict[str, Any]:
         "attention_items": operational.get("attention_items", []),
         "briefing_summary": operational.get("briefing_summary", {}),
         "outbox_summary": operational.get("outbox_summary", {}),
+        "operator": get_operator_state(storage=storage),
     }
     state["action_plan"] = _build_action_plan(state)
     return state
+
+
+def get_operator_state(
+    *,
+    storage: Storage | None = None,
+    readiness_limit: int = 5,
+    activity_limit: int = 8,
+) -> dict[str, Any]:
+    """Return operator-facing control plane state for UI surfaces."""
+    load_dotenv()
+    active_storage = storage or _get_storage()
+
+    oauth: dict[str, Any]
+    try:
+        oauth_status = HHOAuthManager(storage=active_storage).status()
+        oauth = {
+            "ok": True,
+            "configured": bool(oauth_status.get("configured")),
+            "storage_backend": oauth_status.get("storage_backend"),
+            "managed_access_token_present": bool(oauth_status.get("managed_access_token_present")),
+            "managed_refresh_token_present": bool(oauth_status.get("managed_refresh_token_present")),
+            "manual_env_token_present": bool(oauth_status.get("manual_env_token_present")),
+            "account_email": oauth_status.get("account_email"),
+            "scope": oauth_status.get("scope"),
+            "expired": bool(oauth_status.get("expired")),
+            "last_refresh_at": oauth_status.get("last_refresh_at"),
+            "last_sync_at": oauth_status.get("last_sync_at"),
+            "last_error": oauth_status.get("last_error"),
+            "storage_error": oauth_status.get("storage_error"),
+        }
+    except Exception as exc:
+        oauth = {
+            "ok": False,
+            "configured": False,
+            "message": str(exc),
+        }
+
+    hh_sync = {
+        **HHSyncService(storage=active_storage).reconcile(),
+        "sync_actions": ["me", "resumes", "negotiations", "reconcile"],
+        "read_only_remote": True,
+    }
+
+    from .apply_assist_service import prepare_apply_assist
+    from .notion_sync_service import (
+        NotionSyncService,
+        load_notion_sync_config,
+        redact_webhook_url,
+    )
+
+    notion_service = NotionSyncService(active_storage, load_notion_sync_config())
+    outbox_summary = active_storage.summarize_outbox(target=notion_service.config.target)
+    push_ready, push_reason = notion_service.validate_push_ready()
+    outbox_recent = _get_recent_outbox_activity(
+        active_storage,
+        target=notion_service.config.target,
+        limit=activity_limit,
+    )
+
+    candidate_ids = _get_apply_assist_candidate_ids(active_storage, limit=max(readiness_limit * 3, 8))
+    readiness_items: list[dict[str, Any]] = []
+    ready_count = 0
+    blocked_count = 0
+    for vacancy_id in candidate_ids:
+        preview = prepare_apply_assist(active_storage, vacancy_id)
+        data = preview.get("data") or {}
+        vacancy = data.get("vacancy") or {}
+        item = {
+            "vacancy_id": vacancy_id,
+            "ok": bool(preview.get("ok")),
+            "message": preview.get("message"),
+            "vacancy": vacancy,
+            "score": data.get("score") or {},
+            "review": data.get("review") or {},
+            "failed_gates": data.get("failed_gates") or [],
+            "artifacts": data.get("artifacts") or {},
+        }
+        if item["ok"]:
+            ready_count += 1
+        else:
+            blocked_count += 1
+        readiness_items.append(item)
+        if len(readiness_items) >= readiness_limit:
+            break
+
+    return {
+        "oauth": oauth,
+        "hh_sync": hh_sync,
+        "outbox": {
+            "summary": outbox_summary,
+            "config": {
+                "enabled": notion_service.config.enabled,
+                "provider": notion_service.config.provider,
+                "target": notion_service.config.target or OUTBOX_TARGET_EXTERNAL_SYNC,
+                "webhook": redact_webhook_url(notion_service.config.webhook_url)
+                or notion_service.config.webhook_url_env,
+                "push_ready": push_ready,
+                "push_reason": push_reason,
+            },
+            "recent": outbox_recent,
+        },
+        "apply_assist": {
+            "read_only_remote": True,
+            "explicit_approval_required": True,
+            "auto_apply": False,
+            "ready_count": ready_count,
+            "blocked_count": blocked_count,
+            "evaluated": len(readiness_items),
+            "items": readiness_items,
+        },
+        "recent_activity": {
+            "assist": _get_recent_assist_activity(active_storage, limit=activity_limit),
+            "outbox": outbox_recent,
+        },
+    }
 
 
 def _get_follow_ups(storage: Storage) -> list[dict[str, Any]]:
@@ -167,6 +285,78 @@ def _get_follow_ups(storage: Storage) -> list[dict[str, Any]]:
     except Exception:
         pass
     return follow_ups
+
+
+def _get_apply_assist_candidate_ids(storage: Storage, *, limit: int) -> list[str]:
+    with storage.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT v.id
+            FROM vacancies v
+            LEFT JOIN score_details sd ON sd.vacancy_id = v.id
+            LEFT JOIN scores s ON s.vacancy_id = v.id
+            LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+            WHERE COALESCE(r.status, 'new') IN ('interesting', 'maybe', 'new')
+              AND COALESCE(sd.total_score, s.total_score, 0) >= 70
+            ORDER BY COALESCE(sd.total_score, s.total_score, 0) DESC, v.last_seen_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [str(row["id"]) for row in rows]
+
+
+def _get_recent_assist_activity(storage: Storage, *, limit: int) -> list[dict[str, Any]]:
+    with storage.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                ve.vacancy_id,
+                ve.event_type,
+                ve.created_at,
+                ve.new_status,
+                v.name,
+                v.employer_name
+            FROM vacancy_events ve
+            JOIN vacancies v ON v.id = ve.vacancy_id
+            WHERE ve.event_type LIKE 'apply_assist_%'
+            ORDER BY ve.created_at DESC, ve.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _get_recent_outbox_activity(
+    storage: Storage,
+    *,
+    target: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    with storage.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                o.id,
+                o.vacancy_id,
+                o.event_type,
+                o.status,
+                o.attempts,
+                o.last_error,
+                o.created_at,
+                o.updated_at,
+                v.name,
+                v.employer_name
+            FROM integration_outbox o
+            LEFT JOIN vacancies v ON v.id = o.vacancy_id
+            WHERE o.target = ?
+            ORDER BY o.created_at DESC, o.id DESC
+            LIMIT ?
+            """,
+            (target, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def _get_available_reports() -> list[dict[str, str]]:

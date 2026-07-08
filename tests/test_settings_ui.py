@@ -37,6 +37,7 @@ def test_settings_endpoint_masks_token() -> None:
         assert body["ok"] is True
         token_val = body["data"]["env"]["HH_APP_ACCESS_TOKEN"]
         oauth_token_val = body["data"]["env"]["HH_USER_ACCESS_TOKEN"]
+        assert "operator" in body["data"]
         # Token must not be revealed fully
         assert "not set" in token_val or "*" in token_val or len(token_val) < 30
         assert "not set" in oauth_token_val or "*" in oauth_token_val or len(oauth_token_val) < 30
@@ -175,6 +176,7 @@ def test_settings_page_renders() -> None:
     assert resp.status_code == 200
     assert "settings-section" in resp.text
     assert "candidate" in resp.text.lower()
+    assert "Operator Control Plane" in resp.text
 
 
 # ── Sidebar has settings link ──────────────────────────────────────────
@@ -183,3 +185,138 @@ def test_settings_page_renders() -> None:
 def test_sidebar_has_settings_link() -> None:
     html = Path("src/web/templates/index.html").read_text(encoding="utf-8")
     assert "/settings" in html
+
+
+def test_settings_template_has_operator_sections() -> None:
+    html = Path("src/web/templates/settings.html").read_text(encoding="utf-8")
+    assert "operator-summary" in html
+    assert "btn-oauth-refresh" in html
+    assert "btn-outbox-push" in html
+    assert "operator-apply-assist" in html
+
+
+def test_operator_oauth_refresh_endpoint(monkeypatch) -> None:
+    import asyncio
+    import json
+
+    from src.web.routes import api_operator_oauth_refresh
+
+    class _Bundle:
+        expires_at = None
+
+    class _FakeManager:
+        def __init__(self, storage=None) -> None:
+            self.storage = storage
+
+        def refresh(self):
+            return _Bundle()
+
+    monkeypatch.setattr("src.hh_oauth.HHOAuthManager", _FakeManager)
+
+    async def _run():
+        resp = await api_operator_oauth_refresh()
+        body = json.loads(resp.body)
+        assert body["ok"] is True
+        assert "refreshed" in body["message"].lower()
+
+    asyncio.run(_run())
+
+
+def test_operator_hh_sync_endpoint(monkeypatch) -> None:
+    import asyncio
+    import json
+
+    from src.web.routes import api_operator_hh_sync
+    from src.web.schemas import OperatorHHSyncRequest
+
+    class _FakeHHSyncService:
+        def __init__(self, storage=None) -> None:
+            self.storage = storage
+
+        def sync_negotiations(self, status=None, per_page=50):
+            return {"entity": "negotiations", "count": 3, "status_filter": status, "per_page": per_page}
+
+    monkeypatch.setattr("src.hh_sync.HHSyncService", _FakeHHSyncService)
+
+    async def _run():
+        resp = await api_operator_hh_sync(
+            OperatorHHSyncRequest(entity="negotiations", status="active", per_page=25)
+        )
+        body = json.loads(resp.body)
+        assert body["ok"] is True
+        assert body["data"]["count"] == 3
+
+    asyncio.run(_run())
+
+
+def test_operator_outbox_endpoint(monkeypatch) -> None:
+    import asyncio
+    import json
+
+    from src.web.routes import api_operator_outbox
+    from src.web.schemas import OperatorOutboxRequest
+
+    class _FakeNotionSyncService:
+        def __init__(self, storage, config) -> None:
+            self.storage = storage
+            self.config = config
+
+        def push_entries(self, **kwargs):
+            return {"processed": 2, "sent": 2, "failed": 0, "kwargs": kwargs}
+
+        def dry_run_entries(self, **kwargs):
+            return [{"entry": {"id": 1}, "body": {"delivery": {"outbox_id": 1}}, "kwargs": kwargs}]
+
+    monkeypatch.setattr("src.web.routes.NotionSyncService", _FakeNotionSyncService)
+    monkeypatch.setattr("src.web.routes.load_notion_sync_config", lambda: object())
+
+    async def _run():
+        resp = await api_operator_outbox(OperatorOutboxRequest(action="push_pending", limit=2))
+        body = json.loads(resp.body)
+        assert body["ok"] is True
+        assert body["data"]["processed"] == 2
+
+    asyncio.run(_run())
+
+
+def test_operator_apply_assist_endpoints(monkeypatch) -> None:
+    import asyncio
+    import json
+
+    from src.web.routes import (
+        api_operator_apply_assist_approve,
+        api_operator_apply_assist_preview,
+    )
+    from src.web.schemas import OperatorApplyAssistApprovalRequest
+
+    monkeypatch.setattr(
+        "src.web.routes.prepare_apply_assist",
+        lambda storage, vacancy_id: {
+            "ok": True,
+            "message": f"Apply assist ready for {vacancy_id}",
+            "data": {"vacancy": {"id": vacancy_id}},
+        },
+    )
+    monkeypatch.setattr(
+        "src.web.routes.execute_apply_assist",
+        lambda storage, vacancy_id, approve, open_browser: {
+            "ok": True,
+            "message": f"Apply assist handoff prepared for {vacancy_id}",
+            "data": {"vacancy": {"id": vacancy_id}, "approve": approve, "open_browser": open_browser},
+        },
+    )
+
+    async def _run():
+        preview = await api_operator_apply_assist_preview("vac-1")
+        preview_body = json.loads(preview.body)
+        assert preview_body["ok"] is True
+
+        approve = await api_operator_apply_assist_approve(
+            "vac-1",
+            OperatorApplyAssistApprovalRequest(open_browser=False),
+        )
+        approve_body = json.loads(approve.body)
+        assert approve_body["ok"] is True
+        assert "handoff" in approve_body["message"].lower()
+
+    asyncio.run(_run())

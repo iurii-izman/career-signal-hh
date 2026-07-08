@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -19,6 +21,9 @@ from ..services import (
     settings_service,
     vacancy_service,
 )
+from ..services.apply_assist_service import execute_apply_assist, prepare_apply_assist
+from ..services.notion_sync_service import NotionSyncService, load_notion_sync_config
+from ..storage import Storage
 from ..utils import redact_secrets
 from .jobs import JobManager
 from .schemas import (
@@ -27,6 +32,9 @@ from .schemas import (
     BulkActionRequest,
     NextActionRequest,
     NoteRequest,
+    OperatorApplyAssistApprovalRequest,
+    OperatorHHSyncRequest,
+    OperatorOutboxRequest,
     ReviewStatusRequest,
 )
 
@@ -45,6 +53,11 @@ def _template_globals() -> dict[str, str]:
 
 def _job_manager() -> JobManager:
     return JobManager.get()
+
+
+def _storage() -> Storage:
+    load_dotenv()
+    return Storage(os.getenv("DB_PATH", "data/vacancies.sqlite"))
 
 
 def _normalize_date(value: str) -> str:
@@ -815,6 +828,181 @@ async def api_settings_health() -> JSONResponse:
         return JSONResponse(content={"ok": rc == 0, "message": "Health check completed"})
     except Exception as exc:
         return JSONResponse(content={"ok": False, "message": str(exc)}, status_code=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# API: Operator control plane
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.post("/api/operator/oauth/refresh")
+async def api_operator_oauth_refresh() -> JSONResponse:
+    from ..hh_oauth import HHOAuthManager
+
+    try:
+        bundle = HHOAuthManager(storage=_storage()).refresh()
+        return JSONResponse(
+            content={
+                "ok": True,
+                "message": "Managed OAuth access token refreshed.",
+                "data": {
+                    "expires_at": bundle.expires_at.isoformat() if bundle.expires_at else None,
+                },
+            }
+        )
+    except Exception as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=400,
+        )
+
+
+@router.post("/api/operator/hh-sync")
+async def api_operator_hh_sync(body: OperatorHHSyncRequest) -> JSONResponse:
+    from ..hh_sync import HHSyncService
+
+    try:
+        service = HHSyncService(storage=_storage())
+        entity = body.entity.strip().lower()
+        if entity == "me":
+            result = service.sync_me()
+        elif entity == "resumes":
+            result = service.sync_resumes()
+        elif entity == "negotiations":
+            result = service.sync_negotiations(status=body.status, per_page=body.per_page)
+        elif entity == "reconcile":
+            result = service.reconcile()
+        else:
+            return JSONResponse(
+                content={"ok": False, "message": f"Unsupported hh-sync entity: {body.entity}", "data": None},
+                status_code=400,
+            )
+        return JSONResponse(
+            content={
+                "ok": True,
+                "message": f"HH sync completed for {entity}.",
+                "data": result,
+            }
+        )
+    except Exception as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=400,
+        )
+
+
+@router.post("/api/operator/outbox")
+async def api_operator_outbox(body: OperatorOutboxRequest) -> JSONResponse:
+    try:
+        service = NotionSyncService(_storage(), load_notion_sync_config())
+        action = body.action.strip().lower()
+        if action == "dry_run":
+            result = service.dry_run_entries(
+                status="pending",
+                outbox_id=body.outbox_id,
+                limit=body.limit,
+            )
+            return JSONResponse(
+                content={
+                    "ok": True,
+                    "message": f"Prepared {len(result)} outbox payload(s) for dry-run.",
+                    "data": result,
+                }
+            )
+        if action == "push_pending":
+            result = service.push_entries(
+                status="pending",
+                outbox_id=body.outbox_id,
+                limit=body.limit,
+            )
+        elif action == "retry_failed":
+            result = service.push_entries(
+                status="failed",
+                outbox_id=body.outbox_id,
+                limit=body.limit,
+                replayed=True,
+            )
+        elif action == "replay_one":
+            if body.outbox_id is None:
+                return JSONResponse(
+                    content={"ok": False, "message": "Specify outbox_id for replay_one.", "data": None},
+                    status_code=400,
+                )
+            if body.dry_run:
+                result = service.dry_run_entries(
+                    outbox_id=body.outbox_id,
+                    limit=1,
+                    replayed=True,
+                )
+                return JSONResponse(
+                    content={
+                        "ok": True,
+                        "message": f"Prepared replay dry-run for outbox #{body.outbox_id}.",
+                        "data": result,
+                    }
+                )
+            result = service.push_entries(
+                status=None,
+                outbox_id=body.outbox_id,
+                limit=1,
+                replayed=True,
+            )
+        else:
+            return JSONResponse(
+                content={"ok": False, "message": f"Unsupported outbox action: {body.action}", "data": None},
+                status_code=400,
+            )
+        return JSONResponse(
+            content={
+                "ok": True,
+                "message": f"Outbox action {action} completed.",
+                "data": result,
+            }
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=400,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=500,
+        )
+
+
+@router.get("/api/operator/apply-assist/{vacancy_id}")
+async def api_operator_apply_assist_preview(vacancy_id: str) -> JSONResponse:
+    try:
+        result = prepare_apply_assist(_storage(), vacancy_id)
+        status_code = 200 if result["ok"] else 404 if result.get("error_type") == "not_found" else 200
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=500,
+        )
+
+
+@router.post("/api/operator/apply-assist/{vacancy_id}/approve")
+async def api_operator_apply_assist_approve(
+    vacancy_id: str,
+    body: OperatorApplyAssistApprovalRequest,
+) -> JSONResponse:
+    try:
+        result = execute_apply_assist(
+            _storage(),
+            vacancy_id,
+            approve=True,
+            open_browser=body.open_browser,
+        )
+        status_code = 200 if result["ok"] else 404 if result.get("error_type") == "not_found" else 200
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as exc:
+        return JSONResponse(
+            content={"ok": False, "message": str(exc), "data": None},
+            status_code=500,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════
