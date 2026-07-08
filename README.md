@@ -28,6 +28,10 @@ CareerSignal HH не отправляет отклики, не делает auto
 откликов и фоновой очереди. Используются только endpoint'ы `https://api.hh.ru`;
 локальный UI поднимает FastAPI только на машине пользователя.
 
+`apply-assist` не нарушает это правило: команда только проверяет readiness,
+логирует audit trail и может открыть vacancy URL в браузере после явного
+`--approve`. Отправка отклика и фиксация `review apply` всегда остаются ручными.
+
 ## Установка
 
 Требуется Python 3.11+.
@@ -764,6 +768,48 @@ Validator gate для письма:
 Файлы создаются в `exports/apply_packs/<id>_<slug>.md` и `.html`.
 При `--top`/`--limit` дополнительно создаётся `index.html`.
 
+## Controlled Apply Assist
+
+`apply-assist` отделяет draft readiness от реального ручного handoff в HH.
+
+```powershell
+# Проверка readiness без handoff
+python -m src.main apply-assist 123456789
+
+# Явный handoff в браузер после approve
+python -m src.main apply-assist 123456789 --approve --open-browser
+```
+
+Граница намеренно жёсткая:
+- `briefing` = аналитический контекст
+- `apply-pack` = сохранённый draft и артефакты
+- `apply-assist` = gating + operator handoff
+- `review apply` = отдельная ручная фиксация уже выполненного отклика
+
+Assist gates:
+- `score >= 85`
+- `confidence >= 60`
+- `noise <= 35`
+- `review.status == interesting`
+- briefing уже сохранён
+- draft уже сохранён
+- letter validator проходит повторную проверку
+- нет hard red flags в title/description
+- есть `alternate_url` для ручного перехода
+
+Что команда делает:
+- печатает pass/block по каждому gate
+- пишет `apply_assist_*` события в `vacancy_events`
+- при `--approve --open-browser` открывает HH vacancy URL
+- подсказывает точную команду `review apply`
+
+Что команда не делает:
+- не отправляет отклик
+- не копирует письмо в буфер молча
+- не открывает браузер без `--approve`
+- не делает bulk assist
+- не меняет статус на `applied` автоматически
+
 ## Daily review queue
 
 Удобная очередь для ручного отбора лучших кандидатов.
@@ -816,8 +862,11 @@ Safety:
 ```powershell
 python -m src.main autopilot daily --backup-first
 python -m src.main review next-best
-python -m src.main briefing --top 5 --decision strong_match --save-review
-python -m src.main apply-pack --top 5 --decision strong_match
+python -m src.main review set VACANCY_ID --status interesting
+python -m src.main briefing VACANCY_ID --save-review
+python -m src.main apply-pack VACANCY_ID --save-review
+python -m src.main apply-assist VACANCY_ID --approve --open-browser
+python -m src.main review apply VACANCY_ID --date today
 ```
 
 ## Cockpit (Daily Action Center)

@@ -143,6 +143,13 @@ def test_apply_pack_diagnostics_parses() -> None:
     assert args.diagnostics is True
 
 
+def test_apply_assist_parses() -> None:
+    args = parse_args(["apply-assist", "12345", "--approve", "--open-browser"])
+    assert args.vacancy_id == "12345"
+    assert args.approve is True
+    assert args.open_browser is True
+
+
 def test_briefing_vacancy_id_parses() -> None:
     args = parse_args(["briefing", "12345", "--save-review"])
     assert args.vacancy_id == "12345"

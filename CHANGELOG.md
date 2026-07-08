@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- controlled `apply-assist` command with explicit operator approval gate
+- assist guard rails bound to briefing, review draft, validator, score/confidence/noise
+- assist audit trail in `vacancy_events` with handoff events mirrored to `integration_outbox`
+- wizard apply updated to point to controlled assist instead of ambiguous draft-only finish
+
 ## v0.6.0 (2026-06-16)
 - Universal search presets with field-aware scoring v2
 - explainable score_details with decision labels

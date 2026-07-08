@@ -154,6 +154,7 @@ def test_wizard_apply_plan_prints_steps(tmp_path: Path, monkeypatch, capsys) -> 
     assert "briefing" in captured
     assert "apply-pack" in captured
     assert "review set" in captured
+    assert "apply-assist" in captured
     # Must have safety disclaimer
     assert "never sends applications" in captured.lower()
 

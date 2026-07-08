@@ -434,7 +434,12 @@ def command_wizard_apply(args: argparse.Namespace) -> int:
         )
         _plan_step(
             "review set VACANCY_ID --status interesting",
-            "Mark vacancy as interesting after generating pack",
+            "Mark vacancy as interesting so assist can only run on explicit shortlist items",
+            safe=False,
+        )
+        _plan_step(
+            "apply-assist VACANCY_ID --approve --open-browser",
+            "Run controlled assist gates and open the manual handoff only after explicit approval",
             safe=False,
         )
         console.print("\n[dim]Wizard never sends applications to HH.[/dim]")
@@ -478,10 +483,16 @@ def command_wizard_apply(args: argparse.Namespace) -> int:
     if Confirm.ask(f"Mark {vacancy_id} as 'interesting' in reviews?", default=True):
         _run_command(["review", "set", vacancy_id, "--status", "interesting"])
 
+    if Confirm.ask(f"Run controlled apply assist for {vacancy_id}?", default=False):
+        _run_command(["apply-assist", vacancy_id, "--approve", "--open-browser"])
+
     console.print()
-    console.print("[bold green]Apply pack ready![/bold green]")
+    console.print("[bold green]Apply workflow prepared.[/bold green]")
     console.print(f"[dim]Review draft: python -m src.main review draft {vacancy_id}[/dim]")
     console.print(
-        "[dim]Mark as applied: python -m src.main review apply {vacancy_id} --date today[/dim]"
+        f"[dim]Controlled assist: python -m src.main apply-assist {vacancy_id} --approve --open-browser[/dim]"
+    )
+    console.print(
+        f"[dim]Mark as applied: python -m src.main review apply {vacancy_id} --date today[/dim]"
     )
     return 0

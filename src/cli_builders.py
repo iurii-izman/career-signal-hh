@@ -9,6 +9,7 @@ import argparse
 
 from .commands import (
     analytics,
+    apply_assist,
     apply_pack,
     auth,
     autopilot,
@@ -83,6 +84,22 @@ def build_apply_pack_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--diagnostics", action="store_true", help="Print letter validator diagnostics")
     p.set_defaults(func=apply_pack.command_apply_pack)
+
+
+def build_apply_assist_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("apply-assist")
+    p.add_argument("vacancy_id")
+    p.add_argument(
+        "--approve",
+        action="store_true",
+        help="Explicitly approve the operator handoff step.",
+    )
+    p.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="Open the vacancy URL in the browser after explicit approval.",
+    )
+    p.set_defaults(func=apply_assist.command_apply_assist)
 
 
 def build_briefing_parser(sub: argparse._SubParsersAction) -> None:
@@ -324,6 +341,7 @@ def build_review_parser(sub: argparse._SubParsersAction) -> None:
 def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_search_parser(sub)
     build_apply_pack_parser(sub)
+    build_apply_assist_parser(sub)
     build_briefing_parser(sub)
     build_autopilot_parser(sub)
     build_analytics_parser(sub)

@@ -1065,6 +1065,32 @@ class Storage:
         with self.connect() as connection:
             return [dict(row) for row in connection.execute(sql, params).fetchall()]
 
+    def record_vacancy_event(
+        self,
+        vacancy_id: str,
+        *,
+        event_type: str,
+        source: str,
+        payload: dict[str, Any] | None = None,
+        old_status: str | None = None,
+        new_status: str | None = None,
+        enqueue_outbox: bool = False,
+        target: str = OUTBOX_TARGET_EXTERNAL_SYNC,
+    ) -> None:
+        with self.connect() as connection:
+            self._require_vacancy_in_connection(connection, vacancy_id)
+            self._record_event(
+                connection,
+                vacancy_id,
+                event_type=event_type,
+                source=source,
+                payload=payload or {},
+                old_status=old_status,
+                new_status=new_status,
+                enqueue_outbox=enqueue_outbox,
+                target=target,
+            )
+
     def list_outbox_entries(
         self,
         *,
