@@ -16,7 +16,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="CareerSignal HH",
-        version="0.6.0",
+        version="0.7.0",
         docs_url=None,  # Disable OpenAPI docs for now
         redoc_url=None,
     )

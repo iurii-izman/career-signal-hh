@@ -1,10 +1,24 @@
 # Changelog
 
 ## Unreleased
+
+## v0.7.0 (2026-07-08)
+- Tail-0 stabilization and online-first auth baseline
+- candidate/search recalibration for CRM, Bitrix24, integration, AI automation, and no-code roles
+- deterministic letter engine with validator-driven apply-pack gate
+- standalone briefing workflow and saved briefing artifacts
+- evented storage layer with `vacancy_events` and `integration_outbox`
+- notion/n8n delivery layer with dry-run, retry, replay, and sent-row resend guard
+- cockpit 2.0 with pipeline, queue health, risk buckets, preset performance, recent activity, and action shortcuts
+- managed OAuth V2 with keyring-backed token lifecycle and read-only HH sync for profile, resumes, and negotiations
 - controlled `apply-assist` command with explicit operator approval gate
 - assist guard rails bound to briefing, review draft, validator, score/confidence/noise
 - assist audit trail in `vacancy_events` with handoff events mirrored to `integration_outbox`
 - wizard apply updated to point to controlled assist instead of ambiguous draft-only finish
+- release baseline docs:
+  `docs/CURRENT_STATE_2026-07-08.md`,
+  `docs/PHASE2_ROADMAP_2026-07-08.md`
+- release hardening for versioning, checklist, and baseline documentation
 
 ## v0.6.0 (2026-06-16)
 - Universal search presets with field-aware scoring v2

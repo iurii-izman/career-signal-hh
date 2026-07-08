@@ -98,11 +98,14 @@ These are deliberate current boundaries, not accidental bugs:
 
 ## Main Remaining Technical Debt
 
-### 1. Release/version discipline
+### 1. Release discipline
 
-The product surface is already larger than the current `0.6.0` version label.
-Versioning, changelog structure, and release discipline should be aligned before
-the next major implementation wave.
+The version baseline is now aligned at `0.7.0`, but future release discipline
+still needs to stay explicit:
+
+- release blocks should not accumulate indefinitely in `Unreleased`;
+- package/UI/CLI version surfaces must stay in sync;
+- release checklist should be treated as mandatory, not advisory.
 
 ### 2. Documentation hierarchy
 

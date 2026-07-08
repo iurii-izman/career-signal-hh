@@ -1,3 +1,3 @@
-"""CareerSignal HH — local MVP for HeadHunter vacancy monitoring."""
+"""CareerSignal HH — local operator toolkit for controlled HH job search."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

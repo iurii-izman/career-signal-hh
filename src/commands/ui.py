@@ -47,7 +47,7 @@ def command_ui(args: argparse.Namespace) -> int:
         url = f"http://127.0.0.1:{port}"
 
     print("\nCareerSignal HH Local UI")
-    print("  Version:  0.6.0")
+    print("  Version:  0.7.0")
     print(f"  URL:      {url}")
     print(f"  Auth:     {client.auth_mode}")
     print(f"  Token:    {token_status}")
@@ -95,7 +95,7 @@ def _write_ui_status(host: str, port: int) -> None:
             "server_started_at": datetime.now(timezone.utc).isoformat(),
             "port": port,
             "host": host,
-            "version": "0.6.0",
+            "version": "0.7.0",
         }
         Path("data/ui_status.json").write_text(
             json.dumps(status, ensure_ascii=False, indent=2),

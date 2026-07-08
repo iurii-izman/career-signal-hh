@@ -44,6 +44,7 @@ def test_web_app_can_be_imported() -> None:
     app = create_app()
     assert app is not None
     assert app.title == "CareerSignal HH"
+    assert app.version == "0.7.0"
 
 
 # ── Dashboard service works with empty DB ────────────────────────────────
