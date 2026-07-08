@@ -110,6 +110,41 @@ function Stop-UiServer {
     }
 }
 
+function Update-UiStatusState {
+    param(
+        [string]$StatusFile,
+        [string]$State,
+        [int]$Port,
+        [string]$StatusHost,
+        [string]$Url,
+        [string]$ProjectRoot,
+        [string]$Version,
+        [bool]$OpenBrowser
+    )
+
+    try {
+        $status = [ordered]@{
+            state = $State
+            server_started_at = (Get-Date).ToUniversalTime().ToString("o")
+            port = $Port
+            host = $StatusHost
+            url = $Url
+            version = $Version
+            pid = $PID
+            cwd = $ProjectRoot
+            project_root = $ProjectRoot
+            open_browser = $OpenBrowser
+            hostname = $Env:COMPUTERNAME
+        }
+        if ($State -eq "stopped") {
+            $status["stopped_at"] = (Get-Date).ToUniversalTime().ToString("o")
+        }
+        $status | ConvertTo-Json -Depth 8 | Set-Content -Path $StatusFile -Encoding UTF8
+    } catch {
+        Write-Warning "Failed to write UI runtime status: $($_.Exception.Message)"
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
@@ -127,6 +162,11 @@ $serverLog = Join-Path $logsDir ("app_server_" + (Get-Date -Format "yyyyMMdd_HHm
 $serverErrLog = Join-Path $logsDir ("app_server_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".err.log")
 $browserLog = Join-Path $logsDir ("app_browser_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
 $browserErrLog = Join-Path $logsDir ("app_browser_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".err.log")
+$version = "unknown"
+try {
+    $version = (Get-Content (Join-Path $repoRoot "src\__init__.py") | Select-String '__version__ = "(.+)"').Matches[0].Groups[1].Value
+} catch {
+}
 $serverArgs = @()
 $serverArgs += $python.Prefix
 $serverArgs += @("-m", "src.main", "ui", "--host", $BindHost, "--port", "$Port", "--no-browser")
@@ -170,6 +210,15 @@ try {
     $browserProcess.WaitForExit()
 } finally {
     Stop-UiServer -ServerProcess $serverProcess
+    Update-UiStatusState `
+        -StatusFile $statusPath `
+        -State "stopped" `
+        -Port $Port `
+        -StatusHost $BindHost `
+        -Url $url `
+        -ProjectRoot $repoRoot `
+        -Version $version `
+        -OpenBrowser (-not $SmokeTest)
     if (Test-Path $statusPath) {
         Write-Host "Runtime status: $statusPath"
     }

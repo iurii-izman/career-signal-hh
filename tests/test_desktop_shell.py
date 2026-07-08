@@ -50,6 +50,12 @@ def test_no_token_in_start_app_ps1() -> None:
     assert "TOKEN=" not in content.upper()
 
 
+def test_start_app_ps1_updates_stopped_state() -> None:
+    content = (Path("scripts") / "start_app.ps1").read_text(encoding="utf-8")
+    assert "Update-UiStatusState" in content
+    assert '-State "stopped"' in content
+
+
 def test_no_token_in_shortcut_script() -> None:
     content = (Path("scripts") / "Create-CareerSignalShortcut.ps1").read_text(encoding="utf-8")
     assert "HH_APP_ACCESS_TOKEN" not in content
