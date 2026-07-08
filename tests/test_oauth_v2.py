@@ -9,6 +9,7 @@ from rich.console import Console
 from src.commands import oauth as oauth_commands
 from src.hh_client import HHConfigurationError
 from src.hh_oauth import HHOAuthError, HHOAuthManager
+from src.hh_sync import HHSyncService
 from src.storage import Storage
 
 
@@ -150,6 +151,199 @@ def test_reconcile_counts_local_matches(tmp_path: Path) -> None:
 
     assert summary["negotiations"] == 2
     assert summary["negotiations_matched_local_vacancies"] == 1
+    assert summary["negotiations_unmatched_local_vacancies"] == 1
+
+
+def test_sync_negotiations_fetches_all_pages(tmp_path: Path) -> None:
+    storage = _make_storage(tmp_path)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.pages: list[int] = []
+
+        def get_negotiations(self, *, status=None, per_page=50, page=0):
+            self.pages.append(page)
+            bodies = {
+                0: {
+                    "items": [
+                        {"id": "neg-1", "vacancy": {"id": "vac-1"}, "state": {"id": "active"}},
+                    ],
+                    "page": 0,
+                    "pages": 2,
+                    "found": 2,
+                },
+                1: {
+                    "items": [
+                        {"id": "neg-2", "vacancy": {"id": "vac-2"}, "state": {"id": "active"}},
+                    ],
+                    "page": 1,
+                    "pages": 2,
+                    "found": 2,
+                },
+            }
+            return bodies[page]
+
+    class FakeOAuthManager:
+        def __init__(self) -> None:
+            self.client = FakeClient()
+            self.synced = 0
+
+        def get_sync_client(self):
+            return self.client
+
+        def mark_sync_success(self) -> None:
+            self.synced += 1
+
+    oauth = FakeOAuthManager()
+    service = HHSyncService(storage=storage, oauth_manager=oauth)
+
+    result = service.sync_negotiations(status="active", per_page=1)
+    summary = storage.get_hh_sync_summary()
+
+    assert result["count"] == 2
+    assert result["pages_fetched"] == 2
+    assert oauth.client.pages == [0, 1]
+    assert oauth.synced == 1
+    assert summary["negotiations"] == 2
+
+
+def test_sync_messages_saves_messages_and_tolerates_partial_failures(tmp_path: Path) -> None:
+    storage = _make_storage(tmp_path)
+
+    class FakeClient:
+        def get_negotiations(self, *, status=None, per_page=50, page=0):
+            assert page == 0
+            return {
+                "items": [
+                    {"id": "neg-1", "vacancy": {"id": "vac-1"}, "state": {"id": "active"}},
+                    {"id": "neg-2", "vacancy": {"id": "vac-2"}, "state": {"id": "active"}},
+                ],
+                "page": 0,
+                "pages": 1,
+                "found": 2,
+            }
+
+        def get_negotiation_messages(self, negotiation_id: str, *, per_page=50, page=0):
+            if negotiation_id == "neg-2":
+                raise RuntimeError("temporary api issue")
+            return {
+                "items": [
+                    {
+                        "id": "msg-1",
+                        "text": "hello",
+                        "created_at": "2026-07-08T10:00:00+03:00",
+                        "author": {"participant_type": "employer"},
+                        "state": {"id": "text"},
+                    }
+                ],
+                "page": 0,
+                "pages": 1,
+                "found": 1,
+            }
+
+    class FakeOAuthManager:
+        def __init__(self) -> None:
+            self.synced = 0
+
+        def get_sync_client(self):
+            return FakeClient()
+
+        def mark_sync_success(self) -> None:
+            self.synced += 1
+
+    oauth = FakeOAuthManager()
+    service = HHSyncService(storage=storage, oauth_manager=oauth)
+
+    result = service.sync_messages(status="active", per_page=50, messages_per_page=50)
+    summary = storage.get_hh_sync_summary()
+
+    assert result["count"] == 1
+    assert result["negotiations_considered"] == 2
+    assert result["negotiations_synced"] == 1
+    assert result["failed_negotiations"] == [
+        {"negotiation_id": "neg-2", "error": "temporary api issue"}
+    ]
+    assert oauth.synced == 1
+    assert summary["messages"] == 1
+    assert summary["negotiations_with_messages"] == 1
+
+
+def test_reconcile_reports_actionable_gaps(tmp_path: Path) -> None:
+    storage = _make_storage(tmp_path)
+    with storage.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO vacancies (
+                id, name, employer_id, employer_name, area_name, alternate_url,
+                published_at, created_at, archived, salary_from, salary_to, salary_currency,
+                schedule_name, employment_name, experience_name, description_html,
+                description_text, key_skills_json, raw_json, first_seen_at, last_seen_at,
+                source_profile, source_query
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "vac-1",
+                "Vacancy One",
+                "emp-1",
+                "Employer",
+                "Area",
+                "https://hh.ru/vacancy/vac-1",
+                "2026-07-08T00:00:00+00:00",
+                "2026-07-08T00:00:00+00:00",
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "",
+                "",
+                "[]",
+                "{}",
+                "2026-07-08T00:00:00+00:00",
+                "2026-07-08T00:00:00+00:00",
+                "test",
+                "query",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO vacancy_reviews (vacancy_id, status, updated_at)
+            VALUES (?, ?, ?)
+            """,
+            ("vac-1", "interesting", "2026-07-07T00:00:00+00:00"),
+        )
+    storage.save_hh_negotiations(
+        [
+            {
+                "id": "neg-1",
+                "vacancy": {"id": "vac-1"},
+                "resume": {"id": "res-1"},
+                "state": {"id": "active"},
+                "counters": {"unread": 2},
+                "updated_at": "2026-07-08T12:00:00+00:00",
+            },
+            {
+                "id": "neg-2",
+                "vacancy": {"id": "vac-404"},
+                "resume": {"id": "res-2"},
+                "state": {"id": "active"},
+                "updated_at": "2026-07-08T12:05:00+00:00",
+            },
+        ]
+    )
+
+    report = HHSyncService(storage=storage, oauth_manager=HHOAuthManager(storage=storage, token_store=FakeTokenStore())).reconcile()
+
+    assert report["negotiations_matched_local_vacancies"] == 1
+    assert report["negotiations_unmatched_local_vacancies"] == 1
+    assert report["matched_remote_newer_than_review"] == 1
+    assert report["negotiations_with_unread_messages"] == 1
+    assert report["review_status_counts"]["interesting"] == 1
+    assert report["matched_sample"][0]["needs_attention"] is True
+    assert any("not matched" in line for line in report["actionable_summary"])
 
 
 def test_oauth_status_command_never_prints_raw_tokens(monkeypatch: pytest.MonkeyPatch) -> None:

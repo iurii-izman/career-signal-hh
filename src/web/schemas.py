@@ -62,8 +62,10 @@ class OperatorHHSyncRequest(BaseModel):
     """Explicit HH read-only sync request."""
 
     entity: str = "reconcile"
+    negotiation_id: str | None = None
     status: str | None = None
     per_page: int = 50
+    messages_per_page: int = 50
 
 
 class OperatorOutboxRequest(BaseModel):

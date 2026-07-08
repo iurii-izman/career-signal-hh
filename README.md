@@ -1355,13 +1355,14 @@ managed lifecycle. Новый V2-слой добавляет отдельные 
 - `oauth revoke-local` — удалить managed access/refresh token из secure storage и очистить metadata;
 - `hh-sync me` — read-only sync `/me`;
 - `hh-sync resumes` — read-only sync `/resumes/mine`;
-- `hh-sync negotiations` — read-only sync `/negotiations`;
-- `hh-sync reconcile` — локальная сверка переговоров с уже сохранёнными HH vacancy id.
+- `hh-sync negotiations` — read-only sync `/negotiations` with pagination;
+- `hh-sync messages` — read-only sync `/negotiations/{nid}/messages` for one negotiation or for the currently fetched negotiations set;
+- `hh-sync reconcile` — локальная сверка переговоров с already synced messages, local HH vacancy matches and review state.
 
 Что не поддерживается в этом epic:
 
 - автоотклик, bulk apply, скрытая запись на hh.ru;
-- управление резюме, отправка сообщений, изменение переговоров;
+- отправка сообщений, изменение переговоров, скрытие откликов или иные write-actions на hh.ru;
 - неявный перенос manual токена из `.env` в managed storage.
 
 Операторский сценарий:
@@ -1381,6 +1382,8 @@ python -m src.main oauth refresh
 python -m src.main hh-sync me
 python -m src.main hh-sync resumes
 python -m src.main hh-sync negotiations --status active
+python -m src.main hh-sync messages
+python -m src.main hh-sync messages <negotiation_id>
 python -m src.main hh-sync reconcile
 python -m src.main oauth revoke-local
 ```
@@ -1388,7 +1391,7 @@ python -m src.main oauth revoke-local
 Решение по хранению:
 
 - managed access token и refresh token хранятся в OS keyring;
-- в SQLite сохраняются только metadata и sync snapshots (`oauth_tokens_meta`, `hh_profiles`, `hh_resumes`, `hh_negotiations`);
+- в SQLite сохраняются только metadata и sync snapshots (`oauth_tokens_meta`, `hh_profiles`, `hh_resumes`, `hh_negotiations`, `hh_negotiation_messages`);
 - `oauth status` и все новые команды показывают только masked hints.
 
 ## Tail-0 Baseline: online-first workflow

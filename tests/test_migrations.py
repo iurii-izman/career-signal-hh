@@ -40,6 +40,7 @@ def test_fresh_db_applies_all_migrations(tmp_path: Path) -> None:
         assert "briefing_reports" in tables
         assert "vacancy_events" in tables
         assert "integration_outbox" in tables
+        assert "hh_negotiation_messages" in tables
     finally:
         conn.close()
 

@@ -403,9 +403,26 @@ class HHClient:
         return self._request("/resumes/mine", request_type="dict")
 
     def get_negotiations(
-        self, *, status: str | None = None, per_page: int = 50
+        self,
+        *,
+        status: str | None = None,
+        per_page: int = 50,
+        page: int = 0,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"per_page": per_page}
+        params: dict[str, Any] = {"per_page": per_page, "page": page}
         if status:
             params["status"] = status
         return self._request("/negotiations", params=params, request_type="dict")
+
+    def get_negotiation_messages(
+        self,
+        negotiation_id: str,
+        *,
+        per_page: int = 50,
+        page: int = 0,
+    ) -> dict[str, Any]:
+        return self._request(
+            f"/negotiations/{negotiation_id}/messages",
+            params={"per_page": per_page, "page": page},
+            request_type="dict",
+        )

@@ -185,7 +185,7 @@ def get_operator_state(
 
     hh_sync = {
         **HHSyncService(storage=active_storage).reconcile(),
-        "sync_actions": ["me", "resumes", "negotiations", "reconcile"],
+        "sync_actions": ["me", "resumes", "negotiations", "messages", "reconcile"],
         "read_only_remote": True,
     }
 

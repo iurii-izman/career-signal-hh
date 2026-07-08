@@ -146,6 +146,17 @@ CREATE TABLE IF NOT EXISTS hh_negotiations (
     raw_json TEXT NOT NULL,
     synced_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS hh_negotiation_messages (
+    negotiation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    created_at_remote TEXT NULL,
+    author_participant_type TEXT NULL,
+    message_state TEXT NULL,
+    text TEXT NULL,
+    raw_json TEXT NOT NULL,
+    synced_at TEXT NOT NULL,
+    PRIMARY KEY (negotiation_id, message_id)
+);
 CREATE INDEX IF NOT EXISTS idx_vacancies_published ON vacancies(published_at);
 CREATE INDEX IF NOT EXISTS idx_scores_total ON scores(total_score);
 CREATE INDEX IF NOT EXISTS idx_score_details_preset ON score_details(preset_name);
@@ -166,6 +177,8 @@ CREATE INDEX IF NOT EXISTS idx_hh_negotiations_status
 ON hh_negotiations(status, synced_at DESC);
 CREATE INDEX IF NOT EXISTS idx_hh_negotiations_vacancy
 ON hh_negotiations(vacancy_id, synced_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hh_negotiation_messages_negotiation
+ON hh_negotiation_messages(negotiation_id, created_at_remote DESC);
 """
 
 REVIEW_STATUSES = {
@@ -206,6 +219,18 @@ VACANCY_COLUMNS = [
 ]
 
 OUTBOX_TARGET_EXTERNAL_SYNC = "external_sync"
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if len(normalized) > 5 and normalized[-5] in {"+", "-"} and normalized[-3] != ":":
+        normalized = f"{normalized[:-2]}:{normalized[-2:]}"
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
 
 
 class Storage:
@@ -374,6 +399,8 @@ class Storage:
         with self.connect() as connection:
             for negotiation in negotiations:
                 unread_messages = safe_get(negotiation, "counters", "unread")
+                if unread_messages is None:
+                    unread_messages = safe_get(negotiation, "counters", "unread_messages")
                 connection.execute(
                     """
                     INSERT INTO hh_negotiations (
@@ -404,6 +431,42 @@ class Storage:
                 )
         return len(negotiations)
 
+    def save_hh_negotiation_messages(
+        self,
+        negotiation_id: str,
+        messages: list[dict[str, Any]],
+    ) -> int:
+        synced_at = datetime.now(timezone.utc).isoformat()
+        with self.connect() as connection:
+            for message in messages:
+                connection.execute(
+                    """
+                    INSERT INTO hh_negotiation_messages (
+                        negotiation_id, message_id, created_at_remote, author_participant_type,
+                        message_state, text, raw_json, synced_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(negotiation_id, message_id) DO UPDATE SET
+                        created_at_remote=excluded.created_at_remote,
+                        author_participant_type=excluded.author_participant_type,
+                        message_state=excluded.message_state,
+                        text=excluded.text,
+                        raw_json=excluded.raw_json,
+                        synced_at=excluded.synced_at
+                    """,
+                    (
+                        negotiation_id,
+                        str(message.get("id") or ""),
+                        message.get("created_at"),
+                        safe_get(message, "author", "participant_type"),
+                        safe_get(message, "state", "id") or message.get("type"),
+                        message.get("text"),
+                        json_dumps(message),
+                        synced_at,
+                    ),
+                )
+        return len(messages)
+
     def mark_oauth_sync(self, provider: str = "hh_user_oauth") -> None:
         meta = self.get_oauth_meta(provider)
         if not meta:
@@ -418,22 +481,164 @@ class Storage:
             negotiation_count = connection.execute(
                 "SELECT COUNT(*) FROM hh_negotiations"
             ).fetchone()[0]
+            message_count = connection.execute(
+                "SELECT COUNT(*) FROM hh_negotiation_messages"
+            ).fetchone()[0]
             active_negotiations = connection.execute(
                 "SELECT COUNT(*) FROM hh_negotiations WHERE status IS NOT NULL AND status != ''"
             ).fetchone()[0]
-            reconciled = connection.execute(
+            negotiations_with_messages = connection.execute(
+                "SELECT COUNT(DISTINCT negotiation_id) FROM hh_negotiation_messages"
+            ).fetchone()[0]
+            rows = [
+                dict(row)
+                for row in connection.execute(
+                    """
+                    SELECT
+                        n.id AS negotiation_id,
+                        n.vacancy_id,
+                        n.resume_id,
+                        n.status,
+                        n.unread_messages,
+                        n.updated_at_remote,
+                        n.synced_at,
+                        v.id AS local_vacancy_id,
+                        v.name AS local_vacancy_name,
+                        v.last_seen_at AS local_vacancy_last_seen_at,
+                        r.status AS review_status,
+                        r.updated_at AS review_updated_at,
+                        r.next_action,
+                        r.next_action_at,
+                        r.applied_at
+                    FROM hh_negotiations n
+                    LEFT JOIN vacancies v ON v.id = n.vacancy_id
+                    LEFT JOIN vacancy_reviews r ON r.vacancy_id = n.vacancy_id
+                    ORDER BY COALESCE(n.updated_at_remote, n.synced_at) DESC, n.id DESC
+                    """
+                ).fetchall()
+            ]
+            review_status_rows = connection.execute(
                 """
-                SELECT COUNT(*)
+                SELECT COALESCE(r.status, 'new') AS review_status, COUNT(*) AS count
                 FROM hh_negotiations n
                 JOIN vacancies v ON v.id = n.vacancy_id
+                LEFT JOIN vacancy_reviews r ON r.vacancy_id = v.id
+                GROUP BY COALESCE(r.status, 'new')
                 """
-            ).fetchone()[0]
+            ).fetchall()
+        now = datetime.now(timezone.utc)
+        matched_count = 0
+        unmatched_count = 0
+        matched_without_review = 0
+        matched_remote_newer_than_review = 0
+        matched_review_newer_than_remote = 0
+        unread_total = 0
+        negotiations_with_unread_messages = 0
+        remote_updated_last_7d = 0
+        remote_updated_last_30d = 0
+        newest_remote_updated_at: datetime | None = None
+        oldest_remote_updated_at: datetime | None = None
+        matched_sample: list[dict[str, Any]] = []
+        unmatched_sample: list[dict[str, Any]] = []
+
+        for row in rows:
+            unread = int(row.get("unread_messages") or 0)
+            remote_updated_at = _parse_dt(row.get("updated_at_remote"))
+            review_updated_at = _parse_dt(row.get("review_updated_at"))
+            local_vacancy_id = row.get("local_vacancy_id")
+            review_status = row.get("review_status") or "new"
+
+            if unread > 0:
+                unread_total += unread
+                negotiations_with_unread_messages += 1
+            if remote_updated_at is not None:
+                if newest_remote_updated_at is None or remote_updated_at > newest_remote_updated_at:
+                    newest_remote_updated_at = remote_updated_at
+                if oldest_remote_updated_at is None or remote_updated_at < oldest_remote_updated_at:
+                    oldest_remote_updated_at = remote_updated_at
+                if remote_updated_at >= now - timedelta(days=7):
+                    remote_updated_last_7d += 1
+                if remote_updated_at >= now - timedelta(days=30):
+                    remote_updated_last_30d += 1
+
+            item = {
+                "negotiation_id": row["negotiation_id"],
+                "vacancy_id": row.get("vacancy_id"),
+                "status": row.get("status"),
+                "unread_messages": unread,
+                "updated_at_remote": row.get("updated_at_remote"),
+                "review_status": review_status,
+                "review_updated_at": row.get("review_updated_at"),
+                "next_action": row.get("next_action"),
+                "next_action_at": row.get("next_action_at"),
+                "applied_at": row.get("applied_at"),
+            }
+
+            if local_vacancy_id:
+                matched_count += 1
+                no_review = row.get("review_status") in (None, "", "new")
+                if no_review:
+                    matched_without_review += 1
+                if remote_updated_at is not None and review_updated_at is not None:
+                    if remote_updated_at > review_updated_at:
+                        matched_remote_newer_than_review += 1
+                    elif review_updated_at > remote_updated_at:
+                        matched_review_newer_than_remote += 1
+                elif remote_updated_at is not None and no_review:
+                    matched_remote_newer_than_review += 1
+
+                if len(matched_sample) < 10:
+                    matched_sample.append(
+                        {
+                            **item,
+                            "vacancy_name": row.get("local_vacancy_name"),
+                            "needs_attention": bool(
+                                unread > 0
+                                or no_review
+                                or (
+                                    remote_updated_at is not None
+                                    and review_updated_at is not None
+                                    and remote_updated_at > review_updated_at
+                                )
+                            ),
+                        }
+                    )
+            else:
+                unmatched_count += 1
+                if len(unmatched_sample) < 10:
+                    unmatched_sample.append(item)
+
+        review_status_counts = {
+            str(row["review_status"]): int(row["count"])
+            for row in review_status_rows
+        }
         return {
             "profiles": profile_count,
             "resumes": resume_count,
             "negotiations": negotiation_count,
+            "messages": message_count,
             "negotiations_with_status": active_negotiations,
-            "negotiations_matched_local_vacancies": reconciled,
+            "negotiations_with_messages": negotiations_with_messages,
+            "negotiations_with_unread_messages": negotiations_with_unread_messages,
+            "unread_messages_total": unread_total,
+            "negotiations_matched_local_vacancies": matched_count,
+            "negotiations_unmatched_local_vacancies": unmatched_count,
+            "matched_without_review": matched_without_review,
+            "matched_remote_newer_than_review": matched_remote_newer_than_review,
+            "matched_review_newer_than_remote": matched_review_newer_than_remote,
+            "review_status_counts": review_status_counts,
+            "freshness": {
+                "newest_remote_updated_at": (
+                    newest_remote_updated_at.isoformat() if newest_remote_updated_at else None
+                ),
+                "oldest_remote_updated_at": (
+                    oldest_remote_updated_at.isoformat() if oldest_remote_updated_at else None
+                ),
+                "remote_updated_last_7d": remote_updated_last_7d,
+                "remote_updated_last_30d": remote_updated_last_30d,
+            },
+            "matched_sample": matched_sample,
+            "unmatched_sample": unmatched_sample,
         }
 
     def _require_vacancy(self, vacancy_id: str) -> None:

@@ -88,6 +88,7 @@ At the time of this snapshot:
   - `hh-sync me`
   - `hh-sync resumes`
   - `hh-sync negotiations`
+  - `hh-sync messages`
   - `hh-sync reconcile`
 
 ## Known Limits
@@ -97,8 +98,7 @@ These are deliberate current boundaries, not accidental bugs:
 - no response submission through API or browser automation;
 - no bulk assist / bulk apply;
 - no hidden token refresh during HH sync;
-- no message sync yet;
-- negotiations sync still needs pagination maturity;
+- no write-actions for HH negotiations/messages;
 - no background auto-remediation for failed sync or assist gates.
 
 ## Main Remaining Technical Debt

@@ -213,6 +213,26 @@ def _migration_011_add_oauth_sync_tables(connection: sqlite3.Connection) -> None
     )
 
 
+def _migration_012_add_hh_negotiation_messages(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS hh_negotiation_messages (
+            negotiation_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            created_at_remote TEXT NULL,
+            author_participant_type TEXT NULL,
+            message_state TEXT NULL,
+            text TEXT NULL,
+            raw_json TEXT NOT NULL,
+            synced_at TEXT NOT NULL,
+            PRIMARY KEY (negotiation_id, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_hh_negotiation_messages_negotiation
+        ON hh_negotiation_messages(negotiation_id, created_at_remote DESC);
+        """
+    )
+
+
 MIGRATIONS: list[MigrationEntry] = [
     (
         1,
@@ -347,6 +367,11 @@ MIGRATIONS: list[MigrationEntry] = [
         11,
         "011_oauth_sync_tables",
         _migration_011_add_oauth_sync_tables,
+    ),
+    (
+        12,
+        "012_hh_negotiation_messages",
+        _migration_012_add_hh_negotiation_messages,
     ),
 ]
 
@@ -600,6 +625,7 @@ def check_integrity_extended(connection: sqlite3.Connection) -> dict[str, Any]:
         "idx_hh_resumes_updated",
         "idx_hh_negotiations_status",
         "idx_hh_negotiations_vacancy",
+        "idx_hh_negotiation_messages_negotiation",
     ]
     try:
         existing = [

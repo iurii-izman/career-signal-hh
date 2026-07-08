@@ -236,6 +236,17 @@ def test_operator_hh_sync_endpoint(monkeypatch) -> None:
         def sync_negotiations(self, status=None, per_page=50):
             return {"entity": "negotiations", "count": 3, "status_filter": status, "per_page": per_page}
 
+        def sync_messages(self, negotiation_id=None, status=None, per_page=50, messages_per_page=50):
+            return {
+                "entity": "messages",
+                "count": 4,
+                "negotiation_id": negotiation_id,
+                "status_filter": status,
+                "per_page": per_page,
+                "messages_per_page": messages_per_page,
+                "failed_negotiations": [],
+            }
+
     monkeypatch.setattr("src.hh_sync.HHSyncService", _FakeHHSyncService)
 
     async def _run():
@@ -245,6 +256,47 @@ def test_operator_hh_sync_endpoint(monkeypatch) -> None:
         body = json.loads(resp.body)
         assert body["ok"] is True
         assert body["data"]["count"] == 3
+
+    asyncio.run(_run())
+
+
+def test_operator_hh_sync_messages_endpoint(monkeypatch) -> None:
+    import asyncio
+    import json
+
+    from src.web.routes import api_operator_hh_sync
+    from src.web.schemas import OperatorHHSyncRequest
+
+    class _FakeHHSyncService:
+        def __init__(self, storage=None) -> None:
+            self.storage = storage
+
+        def sync_messages(self, negotiation_id=None, status=None, per_page=50, messages_per_page=50):
+            return {
+                "entity": "messages",
+                "count": 2,
+                "negotiation_id": negotiation_id,
+                "status_filter": status,
+                "per_page": per_page,
+                "messages_per_page": messages_per_page,
+                "failed_negotiations": [],
+            }
+
+    monkeypatch.setattr("src.hh_sync.HHSyncService", _FakeHHSyncService)
+
+    async def _run():
+        resp = await api_operator_hh_sync(
+            OperatorHHSyncRequest(
+                entity="messages",
+                negotiation_id="neg-42",
+                per_page=25,
+                messages_per_page=10,
+            )
+        )
+        body = json.loads(resp.body)
+        assert body["ok"] is True
+        assert body["data"]["count"] == 2
+        assert body["data"]["negotiation_id"] == "neg-42"
 
     asyncio.run(_run())
 

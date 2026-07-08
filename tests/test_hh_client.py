@@ -56,3 +56,37 @@ def test_403_has_actionable_message(monkeypatch: pytest.MonkeyPatch) -> None:
     assert error.value.body == {"errors": [{"type": "forbidden"}]}
     assert "HH_APP_ACCESS_TOKEN" in str(error.value)
     assert "HH_AUTH_MODE=application_token" in str(error.value)
+
+
+def test_get_negotiations_passes_page_and_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = HHClient("TestClient/1.0", auth_mode="user_oauth", user_access_token="token")
+    captured: dict[str, object] = {}
+
+    def _fake_get(url, params=None, timeout=None):
+        captured["url"] = url
+        captured["params"] = params
+        return FakeResponse(200, {"items": [], "page": 2, "pages": 3, "per_page": 25})
+
+    monkeypatch.setattr(client.session, "get", _fake_get)
+    payload = client.get_negotiations(status="active", per_page=25, page=2)
+
+    assert payload["page"] == 2
+    assert captured["url"] == "https://api.hh.ru/negotiations"
+    assert captured["params"] == {"status": "active", "per_page": 25, "page": 2}
+
+
+def test_get_negotiation_messages_uses_read_only_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = HHClient("TestClient/1.0", auth_mode="user_oauth", user_access_token="token")
+    captured: dict[str, object] = {}
+
+    def _fake_get(url, params=None, timeout=None):
+        captured["url"] = url
+        captured["params"] = params
+        return FakeResponse(200, {"items": [], "page": 0, "pages": 1, "per_page": 50})
+
+    monkeypatch.setattr(client.session, "get", _fake_get)
+    payload = client.get_negotiation_messages("neg-42", per_page=50, page=0)
+
+    assert payload["pages"] == 1
+    assert captured["url"] == "https://api.hh.ru/negotiations/neg-42/messages"
+    assert captured["params"] == {"per_page": 50, "page": 0}

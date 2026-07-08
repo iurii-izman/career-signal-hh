@@ -639,6 +639,13 @@ def build_hh_sync_parser(sub: argparse._SubParsersAction) -> None:
     negotiations.add_argument("--per-page", type=int, default=50)
     negotiations.set_defaults(func=hh_sync.command_hh_sync_negotiations)
 
+    messages = ps.add_parser("messages")
+    messages.add_argument("negotiation_id", nargs="?")
+    messages.add_argument("--status")
+    messages.add_argument("--per-page", type=int, default=50)
+    messages.add_argument("--messages-per-page", type=int, default=50)
+    messages.set_defaults(func=hh_sync.command_hh_sync_messages)
+
     ps.add_parser("reconcile").set_defaults(func=hh_sync.command_hh_sync_reconcile)
 
 

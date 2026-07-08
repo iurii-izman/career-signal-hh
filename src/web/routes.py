@@ -870,6 +870,13 @@ async def api_operator_hh_sync(body: OperatorHHSyncRequest) -> JSONResponse:
             result = service.sync_resumes()
         elif entity == "negotiations":
             result = service.sync_negotiations(status=body.status, per_page=body.per_page)
+        elif entity == "messages":
+            result = service.sync_messages(
+                body.negotiation_id,
+                status=body.status,
+                per_page=body.per_page,
+                messages_per_page=body.messages_per_page,
+            )
         elif entity == "reconcile":
             result = service.reconcile()
         else:
