@@ -352,11 +352,19 @@ python -m src.main search --dry-run
 
 ## Local UI
 
-CareerSignal HH включает локальный веб-интерфейс для работы через браузер.
+CareerSignal HH включает локальный веб-интерфейс и Windows-first local app
+wrapper поверх того же FastAPI UI.
 
 ### Запуск
 
 ```powershell
+# браузерный режим
+powershell -ExecutionPolicy Bypass -File .\scripts\start_ui.ps1
+
+# app-mode на Windows
+powershell -ExecutionPolicy Bypass -File .\scripts\start_app.ps1
+
+# прямой CLI
 python -m src.main ui --open-browser
 ```
 
@@ -366,9 +374,18 @@ python -m src.main ui --open-browser
 --host HOST         Bind address (default: 127.0.0.1)
 --port PORT         Bind port (default: 8765)
 --open-browser      Open browser automatically
+--no-browser        Disable browser auto-open for wrapper/app-mode launch
 --allow-lan         Allow binding to non-localhost addresses
 --debug             Enable debug logging
 ```
+
+App-mode wrapper:
+
+- сам находит repo root и Python;
+- поднимает `python -m src.main ui --no-browser` в фоне;
+- ждёт readiness через локальный `/api/health`;
+- открывает Edge/Chrome в `--app=http://127.0.0.1:8765`;
+- останавливает backend после закрытия app window.
 
 ### Безопасность
 
@@ -378,6 +395,7 @@ python -m src.main ui --open-browser
 - UI **не отправляет отклики** — все операции read-only или запускают
   существующие CLI-команды.
 - CLI остаётся полностью доступным и независимым от UI.
+- App wrapper использует только loopback URL и не добавляет unsafe browser automation.
 
 ### Первая страница
 

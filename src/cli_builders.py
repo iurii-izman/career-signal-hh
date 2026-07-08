@@ -386,6 +386,11 @@ def build_ui_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
     p.add_argument("--open-browser", action="store_true", help="Open browser automatically")
     p.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Disable automatic browser launch for wrapper/app-mode scenarios",
+    )
+    p.add_argument(
         "--allow-lan",
         action="store_true",
         help="Allow binding to non-localhost addresses",

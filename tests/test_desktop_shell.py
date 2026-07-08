@@ -15,6 +15,14 @@ def test_start_ui_sh_exists() -> None:
     assert (Path("scripts") / "start_ui.sh").is_file(), "start_ui.sh missing"
 
 
+def test_start_app_ps1_exists() -> None:
+    assert (Path("scripts") / "start_app.ps1").is_file(), "start_app.ps1 missing"
+
+
+def test_start_app_cmd_exists() -> None:
+    assert (Path("scripts") / "start_app.cmd").is_file(), "start_app.cmd missing"
+
+
 def test_shortcut_script_exists() -> None:
     assert (Path("scripts") / "Create-CareerSignalShortcut.ps1").is_file(), (
         "Create-CareerSignalShortcut.ps1 missing"
@@ -34,6 +42,12 @@ def test_no_token_in_start_ui_sh() -> None:
     content = (Path("scripts") / "start_ui.sh").read_text(encoding="utf-8")
     assert "HH_APP_ACCESS_TOKEN" not in content
     assert "TOKEN" not in content.upper()
+
+
+def test_no_token_in_start_app_ps1() -> None:
+    content = (Path("scripts") / "start_app.ps1").read_text(encoding="utf-8")
+    assert "HH_APP_ACCESS_TOKEN" not in content
+    assert "TOKEN=" not in content.upper()
 
 
 def test_no_token_in_shortcut_script() -> None:
@@ -132,4 +146,13 @@ def test_ui_status_file_written(monkeypatch, tmp_path: Path) -> None:
     assert data["port"] == 8765
     assert data["host"] == "127.0.0.1"
     assert data["version"] == "0.7.0"
+    assert data["state"] == "unknown"
+    assert data["url"] == "http://127.0.0.1:8765"
     assert "server_started_at" in data
+
+
+def test_build_ui_url_normalizes_wildcard_host() -> None:
+    from src.commands.ui import _build_ui_url
+
+    assert _build_ui_url("0.0.0.0", 8765) == "http://127.0.0.1:8765"
+    assert _build_ui_url("::1", 8765) == "http://[::1]:8765"

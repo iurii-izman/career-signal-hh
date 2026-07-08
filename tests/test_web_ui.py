@@ -195,6 +195,61 @@ def test_ui_command_allows_localhost(monkeypatch, capsys) -> None:
     assert "127.0.0.1" in captured
 
 
+def test_ui_command_no_browser_suppresses_browser_open(monkeypatch) -> None:
+    """--no-browser must suppress browser side effects."""
+    import argparse
+    import types
+
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: None, raising=False)
+
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.state = types.SimpleNamespace()
+
+        def on_event(self, _name: str):
+            def _decorator(fn):
+                return fn
+
+            return _decorator
+
+    monkeypatch.setattr("src.web.create_app", lambda: FakeApp())
+
+    calls: list[dict[str, object]] = []
+    fake_uvicorn = types.SimpleNamespace(
+        run=lambda app, host, port, log_level, access_log: calls.append(
+            {
+                "app": app,
+                "host": host,
+                "port": port,
+                "log_level": log_level,
+                "access_log": access_log,
+            }
+        )
+    )
+    monkeypatch.setitem(__import__("sys").modules, "uvicorn", fake_uvicorn)
+
+    args = argparse.Namespace(
+        host="127.0.0.1",
+        port=8765,
+        open_browser=True,
+        no_browser=True,
+        allow_lan=False,
+        debug=False,
+        shortcut=False,
+        app_mode=False,
+    )
+
+    from src.commands.ui import command_ui
+
+    rc = command_ui(args)
+    assert rc == 0
+    assert opened == []
+    assert calls and calls[0]["host"] == "127.0.0.1"
+
+
 # ── Static files exist ───────────────────────────────────────────────────
 
 
@@ -329,3 +384,4 @@ def test_ui_command_help(capsys) -> None:
     assert "ui" in captured
     assert "--host" in captured
     assert "--port" in captured
+    assert "--no-browser" in captured
