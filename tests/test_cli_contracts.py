@@ -143,6 +143,18 @@ def test_apply_pack_diagnostics_parses() -> None:
     assert args.diagnostics is True
 
 
+def test_briefing_vacancy_id_parses() -> None:
+    args = parse_args(["briefing", "12345", "--save-review"])
+    assert args.vacancy_id == "12345"
+    assert args.save_review is True
+
+
+def test_briefing_top_parses() -> None:
+    args = parse_args(["briefing", "--top", "5", "--format", "json"])
+    assert args.top == 5
+    assert args.format == "json"
+
+
 # ── analytics ────────────────────────────────────────────────────────────────
 
 

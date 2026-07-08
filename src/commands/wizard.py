@@ -5,7 +5,7 @@ Usage:
   python -m src.main wizard first-run     # guided setup
   python -m src.main wizard daily         # daily job search
   python -m src.main wizard improve       # quality improvement
-  python -m src.main wizard apply         # apply-pack workflow
+  python -m src.main wizard apply         # briefing + apply-pack workflow
 
 All subcommands support --plan to print the plan without executing.
 """
@@ -405,7 +405,7 @@ def command_wizard_improve(args: argparse.Namespace) -> int:
 
 
 def command_wizard_apply(args: argparse.Namespace) -> int:
-    """Guided apply-pack workflow: queue → choose → explain → pack → review."""
+    """Guided briefing/apply-pack workflow: queue → choose → explain → briefing → pack."""
     plan_mode = getattr(args, "plan", False)
 
     if plan_mode:
@@ -421,6 +421,11 @@ def command_wizard_apply(args: argparse.Namespace) -> int:
         _plan_step(
             "score explain VACANCY_ID",
             "See detailed scoring breakdown for this vacancy",
+        )
+        _plan_step(
+            "briefing VACANCY_ID --save-review",
+            "Generate 7-block briefing and save it to briefing storage",
+            safe=False,
         )
         _plan_step(
             "apply-pack VACANCY_ID --save-review",
@@ -461,11 +466,15 @@ def command_wizard_apply(args: argparse.Namespace) -> int:
     if Confirm.ask(f"Show scoring breakdown for {vacancy_id}?", default=True):
         _run_command(["score", "explain", vacancy_id])
 
-    # 4. Generate apply-pack
+    # 4. Generate briefing
+    if Confirm.ask(f"Generate briefing for {vacancy_id}?", default=True):
+        _run_command(["briefing", vacancy_id, "--save-review"])
+
+    # 5. Generate apply-pack
     if Confirm.ask(f"Generate apply pack for {vacancy_id}?", default=True):
         _run_command(["apply-pack", vacancy_id, "--save-review"])
 
-    # 5. Mark as interesting
+    # 6. Mark as interesting
     if Confirm.ask(f"Mark {vacancy_id} as 'interesting' in reviews?", default=True):
         _run_command(["review", "set", vacancy_id, "--status", "interesting"])
 

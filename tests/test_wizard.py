@@ -138,7 +138,7 @@ def test_wizard_improve_plan_prints_steps(tmp_path: Path, monkeypatch, capsys) -
 
 
 def test_wizard_apply_plan_prints_steps(tmp_path: Path, monkeypatch, capsys) -> None:
-    """wizard apply --plan prints apply pack workflow."""
+    """wizard apply --plan prints briefing + apply pack workflow."""
     storage = make_storage(tmp_path)
     monkeypatch.setenv("DB_PATH", str(storage.path))
 
@@ -151,6 +151,7 @@ def test_wizard_apply_plan_prints_steps(tmp_path: Path, monkeypatch, capsys) -> 
     assert result == 0
     assert "review queue" in captured
     assert "score explain" in captured
+    assert "briefing" in captured
     assert "apply-pack" in captured
     assert "review set" in captured
     # Must have safety disclaimer

@@ -12,6 +12,7 @@ from .commands import (
     apply_pack,
     auth,
     autopilot,
+    briefing,
     calibrate,
     campaigns,
     cockpit,
@@ -79,6 +80,25 @@ def build_apply_pack_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--diagnostics", action="store_true", help="Print letter validator diagnostics")
     p.set_defaults(func=apply_pack.command_apply_pack)
+
+
+def build_briefing_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("briefing")
+    p.add_argument("vacancy_id", nargs="?", help="Vacancy ID.")
+    p.add_argument("--top", type=int)
+    p.add_argument("--limit", type=int)
+    p.add_argument("--decision")
+    p.add_argument("--preset")
+    p.add_argument("--status", choices=sorted(REVIEW_STATUSES))
+    p.add_argument("--min-score", type=int, default=0)
+    p.add_argument("--remote-only", action="store_true")
+    p.add_argument("--with-salary", action="store_true")
+    p.add_argument("--hide-risk", action="store_true")
+    p.add_argument("--new-only", action="store_true")
+    p.add_argument("--lang", choices=["ru", "en"], default="ru")
+    p.add_argument("--format", choices=["md", "html", "json", "all"], default="all")
+    p.add_argument("--save-review", action="store_true")
+    p.set_defaults(func=briefing.command_briefing)
 
 
 def build_autopilot_parser(sub: argparse._SubParsersAction) -> None:
@@ -301,6 +321,7 @@ def build_review_parser(sub: argparse._SubParsersAction) -> None:
 def build_all_parsers(sub: argparse._SubParsersAction) -> None:
     build_search_parser(sub)
     build_apply_pack_parser(sub)
+    build_briefing_parser(sub)
     build_autopilot_parser(sub)
     build_analytics_parser(sub)
     build_score_parser(sub)

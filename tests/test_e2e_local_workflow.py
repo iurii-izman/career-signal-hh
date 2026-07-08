@@ -35,9 +35,20 @@ def _load_preset() -> dict[str, dict[str, object]]:
 
 
 def test_e2e_full_local_workflow(tmp_path: Path, monkeypatch, capsys) -> None:
-    """Run the complete local pipeline: seed → score → export → queue → pack → health."""
+    """Run the complete local pipeline: seed → score → export → briefing → pack → health."""
     storage = make_storage(tmp_path)
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DB_PATH", str(storage.path))
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    repo_root = Path(__file__).resolve().parents[1]
+    for name in [
+        "candidate.yaml",
+        "apply_templates.yaml",
+        "search_presets.yaml",
+        "scoring_rules.yaml",
+    ]:
+        (config_dir / name).write_text((repo_root / "config" / name).read_text(encoding="utf-8"))
     monkeypatch.setattr(
         "src.search_presets.load_search_presets",
         lambda *a, **kw: _load_preset(),
@@ -92,8 +103,9 @@ def test_e2e_full_local_workflow(tmp_path: Path, monkeypatch, capsys) -> None:
     assert result == 0
     assert "results" in captured.lower() or "вакансий" in captured.lower()
 
-    # ── 4. Apply-pack for top vacancy ───────────────────────────────────
+    # ── 4. Briefing + apply-pack for top vacancy ───────────────────────
     from src.commands.apply_pack import command_apply_pack
+    from src.commands.briefing import command_briefing
 
     # Get a vacancy ID that has a score
     with storage.connect() as conn:
@@ -101,6 +113,26 @@ def test_e2e_full_local_workflow(tmp_path: Path, monkeypatch, capsys) -> None:
             "SELECT vacancy_id FROM score_details WHERE decision='strong_match' LIMIT 1"
         ).fetchone()
     if row:
+        briefing_result = command_briefing(
+            Namespace(
+                vacancy_id=row["vacancy_id"],
+                top=None,
+                limit=None,
+                decision=None,
+                preset=None,
+                status=None,
+                min_score=0,
+                remote_only=False,
+                with_salary=False,
+                hide_risk=False,
+                new_only=False,
+                lang="ru",
+                format="md",
+                save_review=True,
+            )
+        )
+        assert briefing_result == 0
+        assert list((tmp_path / "exports" / "briefings").glob(f"{row['vacancy_id']}_*.md"))
         result = command_apply_pack(
             Namespace(
                 vacancy_id=row["vacancy_id"],
@@ -115,6 +147,7 @@ def test_e2e_full_local_workflow(tmp_path: Path, monkeypatch, capsys) -> None:
                 template=None,
                 save_review=False,
                 overwrite=False,
+                diagnostics=False,
             )
         )
         captured2 = capsys.readouterr().out

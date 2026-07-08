@@ -13,6 +13,21 @@ def _e(value: Any) -> str:
     return html.escape(str(value or ""))
 
 
+def _artifact_link(kind: str, vacancy_id: str) -> str:
+    base = Path("exports")
+    if kind == "briefing":
+        target_dir = base / "briefings"
+        label = "briefing"
+    else:
+        target_dir = base / "apply_packs"
+        label = "apply-pack"
+    matches = sorted(target_dir.glob(f"{vacancy_id}_*.html"))
+    if not matches:
+        return ""
+    href = matches[0].as_posix().replace("exports/", "")
+    return f'<a href="{_e(href)}">{label}</a>'
+
+
 def export_html(
     rows: list[dict[str, Any]], path: str | Path, clusters: dict[str, dict[str, Any]] | None = None
 ) -> None:
@@ -76,6 +91,14 @@ def export_html(
             if row.get("next_action")
             else ""
         )
+        briefing_link = _artifact_link("briefing", str(row.get("id") or ""))
+        apply_pack_link = _artifact_link("apply_pack", str(row.get("id") or ""))
+        artifacts = " ".join(x for x in [briefing_link, apply_pack_link] if x)
+        artifact_meta = (
+            f'<div class="review-note"><strong>Artifacts:</strong> {artifacts}</div>'
+            if artifacts
+            else ""
+        )
 
         # Cluster attributes
         cluster_attrs = ""
@@ -104,6 +127,7 @@ def export_html(
   <div class="meta">{_e(row.get("schedule_name"))} · {_e(row.get("employment_name"))} · {_e(row.get("experience_name"))} · {_e((row.get("published_at") or "")[:10])}</div>
   <div class="review-meta">Review: {_e(review_status)}{priority} {applied} {next_action}</div>
   {notes}
+  {artifact_meta}
   <p>{_e(truncate(row.get("description_text"), 300))}</p>
   <div class="tags">{"".join(f"<span>{_e(x)}</span>" for x in reasons)}{"".join(f"<span>{_e(kw.get('keyword', ''))} {kw.get('field', '')}</span>" for kw in matched[:5])}</div>
   <div class="risks">{"".join(f"<span>{_e(x)}</span>" for x in risks)}</div>

@@ -93,7 +93,7 @@ python -m src.main wizard
 | `wizard first-run`                   | Проверка .env, токена, миграций, пресетов            |
 | `wizard daily`                       | Health → backup → search → cockpit → review          |
 | `wizard improve`                     | Quality → calibrate → suggest → validate             |
-| `wizard apply`                       | Queue → explain → apply-pack → review set            |
+| `wizard apply`                       | Queue → explain → briefing → apply-pack → review set |
 
 ### Plan mode (неинтерактивный)
 
@@ -109,7 +109,7 @@ python -m src.main wizard apply --plan
 ### Wizard гарантии
 
 - **Никогда не запускает deep mode** (только smoke/normal).
-- **Не отправляет отклики** — wizard только генерирует apply-pack локально.
+- **Не отправляет отклики** — wizard только генерирует briefing/apply-pack локально.
 - **Не печатает токены** — только показывает «set» / «not set».
 - **Опасные действия требуют подтверждения** (backup, search — Confirm.ask).
 - **`--yes` пропускает подтверждения** для автоматизации.
@@ -579,6 +579,8 @@ python -m src.main export --min-score 35 --profile ai_automation --days 14
 - `exports/vacancies_report.html` — автономный тёмный отчёт с фильтрами;
 - `exports/vacancies.csv` — таблица для ручного трекера;
 - `exports/vacancies.jsonl` — нормализованные данные и scoring;
+- `exports/briefings/` — 7-блочные vacancy briefings и batch index;
+- `exports/apply_packs/` — cover letter packs и batch index;
 - `data/vacancies.sqlite` — рабочая база;
 - `data/sample_vacancies.sqlite` — база для sample-export;
 - `backups/vacancies_YYYYMMDD_HHMMSS.sqlite` — бэкапы.
@@ -667,6 +669,36 @@ Letter engine:
 Шаблоны: `config/apply_templates.yaml` — preset-specific blueprints
 с поддержкой short/medium/detailed стилей и ru/en языков.
 Fallback: preset → default → builtin.
+
+## Vacancy briefing
+
+Standalone `briefing` использует уже сохранённые `vacancy + score_details + review`
+и генерирует стабильный 7-блочный анализ для ручного решения по вакансии.
+
+```powershell
+# Для одной вакансии
+python -m src.main briefing 123456789
+python -m src.main briefing 123456789 --format json
+
+# Для очереди
+python -m src.main briefing --top 5 --decision strong_match --save-review
+python -m src.main briefing --top 10 --min-score 70 --remote-only --format html
+```
+
+7 блоков briefing:
+- **Vacancy Snapshot** — компания, роль, salary/schedule/employment, published
+- **Score Verdict** — total, decision, confidence, noise, decision logic
+- **Match Evidence** — matched keywords и score anchors
+- **Gaps And Objections** — excluded keywords и честные interview phrases
+- **Risk And Checks** — salary/remote/risk flags
+- **Recruiter Questions** — вопросы для уточнения до отклика
+- **Recommended Action** — apply / clarify / low priority
+
+Сохранение и артефакты:
+- `--save-review` сохраняет briefing в таблицу `briefing_reports` как отдельный артефакт;
+- файлы пишутся в `exports/briefings/<id>_<slug>.md|.html|.json`;
+- для batch-режима создаётся `exports/briefings/index.html`;
+- основной `export` подхватывает ссылки на briefing/apply-pack, если HTML-артефакты уже созданы.
 
 ```powershell
 # Для одной вакансии (medium style по умолчанию)
@@ -768,6 +800,7 @@ Safety:
 ```powershell
 python -m src.main autopilot daily --backup-first
 python -m src.main review next-best
+python -m src.main briefing --top 5 --decision strong_match --save-review
 python -m src.main apply-pack --top 5 --decision strong_match
 ```
 
@@ -1103,6 +1136,7 @@ Retention defaults:
 - logs: 30 дней
 - backups: 10 последних или 30 дней
 - exports/vacancies_report.html: только текущий
+- exports/briefings: 60 дней или 100 последних
 - exports/apply_packs: 60 дней или 100 последних
 - config/backups: 20 последних
 

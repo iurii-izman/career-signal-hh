@@ -61,11 +61,24 @@ CREATE TABLE IF NOT EXISTS vacancy_reviews (
     next_action_at TEXT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS briefing_reports (
+    vacancy_id TEXT NOT NULL,
+    lang TEXT NOT NULL DEFAULT 'ru',
+    score_total INTEGER NOT NULL DEFAULT 0,
+    decision TEXT NOT NULL DEFAULT '',
+    report_md TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(vacancy_id, lang),
+    FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+);
 CREATE INDEX IF NOT EXISTS idx_vacancies_published ON vacancies(published_at);
 CREATE INDEX IF NOT EXISTS idx_scores_total ON scores(total_score);
 CREATE INDEX IF NOT EXISTS idx_score_details_preset ON score_details(preset_name);
 CREATE INDEX IF NOT EXISTS idx_score_details_decision ON score_details(decision);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON vacancy_reviews(status);
+CREATE INDEX IF NOT EXISTS idx_briefing_reports_updated ON briefing_reports(updated_at DESC);
 """
 
 REVIEW_STATUSES = {
@@ -401,6 +414,57 @@ class Storage:
                 (vacancy_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def get_briefing_report(self, vacancy_id: str, lang: str = "ru") -> dict[str, Any] | None:
+        """Return saved briefing report for a vacancy/lang pair."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM briefing_reports WHERE vacancy_id = ? AND lang = ?",
+                (vacancy_id, lang),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def upsert_briefing_report(
+        self,
+        vacancy_id: str,
+        *,
+        lang: str,
+        score_total: int,
+        decision: str,
+        report_md: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Insert or update a saved briefing artifact."""
+        self._require_vacancy(vacancy_id)
+        now = datetime.now(timezone.utc).isoformat()
+        payload_json = json_dumps(payload)
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO briefing_reports (
+                    vacancy_id, lang, score_total, decision,
+                    report_md, payload_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(vacancy_id, lang) DO UPDATE SET
+                    score_total = excluded.score_total,
+                    decision = excluded.decision,
+                    report_md = excluded.report_md,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    vacancy_id,
+                    lang,
+                    score_total,
+                    decision,
+                    report_md,
+                    payload_json,
+                    now,
+                    now,
+                ),
+            )
+        return self.get_briefing_report(vacancy_id, lang) or {}
 
     def list_vacancies_for_rescore(
         self, limit: int | None = None, preset: str | None = None

@@ -90,6 +90,27 @@ def _migration_008_add_source_query(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_009_add_briefing_reports(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS briefing_reports (
+            vacancy_id TEXT NOT NULL,
+            lang TEXT NOT NULL DEFAULT 'ru',
+            score_total INTEGER NOT NULL DEFAULT 0,
+            decision TEXT NOT NULL DEFAULT '',
+            report_md TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(vacancy_id, lang),
+            FOREIGN KEY(vacancy_id) REFERENCES vacancies(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_briefing_reports_updated
+        ON briefing_reports(updated_at DESC);
+        """
+    )
+
+
 MIGRATIONS: list[MigrationEntry] = [
     (
         1,
@@ -209,6 +230,11 @@ MIGRATIONS: list[MigrationEntry] = [
         8,
         "008_vacancies_source_query",
         _migration_008_add_source_query,
+    ),
+    (
+        9,
+        "009_briefing_reports",
+        _migration_009_add_briefing_reports,
     ),
 ]
 
