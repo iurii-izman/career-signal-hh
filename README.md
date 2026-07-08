@@ -32,6 +32,30 @@ CareerSignal HH не отправляет отклики, не делает auto
 логирует audit trail и может открыть vacancy URL в браузере после явного
 `--approve`. Отправка отклика и фиксация `review apply` всегда остаются ручными.
 
+## Текущее состояние
+
+На 8 июля 2026 проект находится в состоянии **Phase 1 complete**:
+
+- online-first baseline стабилизирован;
+- Tail-0 и Epics A-H завершены;
+- полный daily loop `search -> queue -> briefing -> apply-pack -> apply-assist -> manual apply`
+  уже существует;
+- `managed OAuth V2` реализован как additive read-only sync слой;
+- локальный web UI и cockpit являются рабочей операционной поверхностью.
+
+Короткий статус зафиксирован в:
+
+- [docs/CURRENT_STATE_2026-07-08.md](C:/Dev/career-signal-hh/docs/CURRENT_STATE_2026-07-08.md)
+- [docs/PHASE2_ROADMAP_2026-07-08.md](C:/Dev/career-signal-hh/docs/PHASE2_ROADMAP_2026-07-08.md)
+
+Следующая реализационная волна должна идти не в ещё один "долгий хвост", а в
+productization и operator maturity:
+
+- Epic I — release hardening;
+- Epic J — desktop packaging;
+- Epic K — operator control plane in UI;
+- Epic L — sync maturity.
+
 ## Установка
 
 Требуется Python 3.11+.

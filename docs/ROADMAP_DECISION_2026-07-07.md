@@ -1,5 +1,12 @@
 # Roadmap Decision — 2026-07-07
 
+> Status update on 2026-07-08:
+> Tail-0 and Epics A-H are complete.
+> Use [CURRENT_STATE_2026-07-08.md](C:/Dev/career-signal-hh/docs/CURRENT_STATE_2026-07-08.md)
+> for the concise product baseline and
+> [PHASE2_ROADMAP_2026-07-08.md](C:/Dev/career-signal-hh/docs/PHASE2_ROADMAP_2026-07-08.md)
+> for the next implementation wave.
+
 ## Decision
 
 Do not stop for a long "perfect tails" phase.
